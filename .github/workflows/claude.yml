@@ -232,6 +232,50 @@ jobs:
           # Set output to indicate success
           echo "success=$([[ $EXIT_CODE -eq 0 ]] && echo 'true' || echo 'false')" >> $GITHUB_OUTPUT
 
+      - name: Prepare System Prompt
+        if: github.event.pull_request != null || github.event.issue.pull_request != null
+        id: system-prompt
+        run: |
+          # Load response format template
+          if [ -f ".github/prompts/recce-analysis-format.md" ]; then
+            FORMAT_GUIDE=$(cat .github/prompts/recce-analysis-format.md)
+          else
+            echo "::warning::Response format guide not found, using default"
+            FORMAT_GUIDE=""
+          fi
+          
+          # Compose complete system prompt
+          cat > /tmp/system_prompt.txt <<'PROMPT_EOF'
+          You are analyzing a dbt project Pull Request with Recce MCP tools available.
+          
+          ## Analysis Workflow
+          Always start your PR analysis by using Recce MCP tools to compare base and current environments:
+          1. Use mcp__recce__get_lineage_diff to understand model changes
+          2. Use mcp__recce__row_count_diff to check data volume changes  
+          3. Use mcp__recce__profile_diff for statistical analysis of key columns
+          4. Use mcp__recce__query_diff to validate data quality
+          
+          Prefer Recce MCP tools over manual queries for all dbt model comparisons and data validation.
+          
+          ## Response Format
+          PROMPT_EOF
+          
+          if [ -n "$FORMAT_GUIDE" ]; then
+            echo "$FORMAT_GUIDE" >> /tmp/system_prompt.txt
+          fi
+          
+          cat >> /tmp/system_prompt.txt <<'PROMPT_EOF'
+          
+          ## Important
+          - Always address the user's specific request from their @claude comment
+          - Provide comprehensive Recce-based analysis
+          - Be concise but thorough
+          - Use structured format for better readability
+          PROMPT_EOF
+          
+          # Store prompt for next step (escape for use in command line)
+          echo "prompt_file=/tmp/system_prompt.txt" >> $GITHUB_OUTPUT
+
       - name: Validate MCP Configuration
         if: github.event.pull_request != null || github.event.issue.pull_request != null
         run: |
@@ -323,6 +367,6 @@ jobs:
           claude_args: |
             --mcp-config .github/mcp_config.json
             --max-turns 50
-            --system-prompt "You are analyzing a dbt project Pull Request with Recce MCP tools available. Always start your PR analysis by using Recce MCP tools to compare base and current environments: 1) Use mcp__recce__get_lineage_diff to understand model changes, 2) Use mcp__recce__row_count_diff to check data volume changes, 3) Use mcp__recce__profile_diff for statistical analysis of key columns, 4) Use mcp__recce__query_diff to validate data quality. Prefer Recce MCP tools over manual queries for all dbt model comparisons and data validation. Always address the user's specific request from their @claude comment while providing comprehensive Recce-based analysis."
+            --system-prompt-file ${{ steps.system-prompt.outputs.prompt_file }}
             --allowedTools "Bash(recce),Bash(recce mcp-server),Bash(ls target/manifest.json),Bash(ls target-base/manifest.json),Bash(gh pr view:*),Bash(jq -r *),mcp__recce__get_lineage_diff,mcp__recce__row_count_diff,mcp__recce__query,mcp__recce__query_diff,mcp__recce__profile_diff"
 
