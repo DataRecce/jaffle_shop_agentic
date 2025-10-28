@@ -1,0 +1,328 @@
+name: Claude Code
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+  issues:
+    types: [opened, assigned]
+  pull_request_review:
+    types: [submitted]
+
+jobs:
+  claude:
+    if: |
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
+      (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+      id-token: write
+      actions: read # Required for Claude to read CI results on PRs
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          # For PR events, checkout PR head; for issue_comment, will be updated in Get PR information step
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Checkout Recce Repository
+        uses: actions/checkout@v4
+        with:
+          repository: 'DataRecce/recce'
+          path: 'recce-repo'
+          # TODO: Update to stable release tag once available (e.g., v1.0.0)
+          # Currently using feature branch for MCP implementation
+          ref: 'feature/drc-1893-implement-the-mcp-server-in-recce'
+          # Shallow clone to minimize download time and storage
+          fetch-depth: 1
+          # Disable sparse-checkout for now to ensure all necessary files for pip install are available
+          # sparse-checkout and sparse-checkout-cone-mode can be enabled if we identify specific paths needed
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          # Python 3.10 is used for compatibility with Recce and dbt-core
+          # Recce requires Python 3.9+ per its setup.py
+          python-version: '3.10'
+
+      - name: Cache Python dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ hashFiles('requirements.txt') }}-recce-drc-1893
+          restore-keys: |
+            pip-${{ hashFiles('requirements.txt') }}-
+            pip-
+
+      - name: Cache dbt packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            dbt_packages/
+            ~/.dbt/
+          key: dbt-packages-${{ hashFiles('packages.yml') }}
+          restore-keys: |
+            dbt-packages-
+
+      - name: Install Python dependencies
+        run: |
+          pip install -r requirements.txt
+
+      - name: Install dbt packages
+        run: |
+          dbt deps
+
+      - name: Install Recce from source
+        run: |
+          # Verify checkout directory exists and contains setup.py
+          if [ ! -d "./recce-repo" ]; then
+            echo "::error::Recce repository not found at ./recce-repo"
+            exit 1
+          fi
+          
+          if [ ! -f "./recce-repo/setup.py" ]; then
+            echo "::error::setup.py not found in recce-repo. Checkout may be incomplete."
+            exit 1
+          fi
+          
+          # Verify VERSION file exists (required by setup.py)
+          if [ ! -f "./recce-repo/recce/VERSION" ]; then
+            echo "::error::VERSION file not found. Package data may be incomplete."
+            exit 1
+          fi
+          
+          # Upgrade pip, setuptools, and wheel to ensure proper dependency resolution
+          echo "Upgrading pip, setuptools, and wheel..."
+          pip install --upgrade pip setuptools wheel
+          
+          # Install packaging first (required by some dependencies)
+          echo "Installing base dependencies..."
+          pip install packaging
+          
+          # Install Recce with all dependencies
+          # Using -e for editable mode, with explicit dependency installation
+          echo "Installing Recce from source with all dependencies..."
+          pip install -e "./recce-repo[dev]" --no-cache-dir
+          
+          # Install any missing common dependencies that might not be in setup.py
+          echo "Installing additional common dependencies..."
+          pip install pytz tzdata --no-cache-dir
+          
+          # Verify installation
+          if command -v recce >/dev/null 2>&1; then
+            echo "✓ Recce installed successfully: $(which recce)"
+            echo "✓ Recce version: $(recce version)"
+          else
+            echo "::error::Recce installation failed - command not found"
+            exit 1
+          fi
+          
+          # Verify critical dependencies are installed
+          echo "Verifying critical dependencies..."
+          python -c "import pytz; import mcp; import fastapi; import click; print('✓ All critical dependencies verified')" || {
+            echo "::error::Some critical dependencies are missing"
+            echo "Installed packages:"
+            pip list
+            exit 1
+          }
+
+      - name: Get PR information
+        if: github.event.pull_request != null || github.event.issue.pull_request != null
+        id: pr-info
+        run: |
+          if [ "${{ github.event_name }}" == "issue_comment" ]; then
+            # For issue comments on PRs, fetch PR details
+            PR_NUMBER=${{ github.event.issue.number }}
+            PR_DATA=$(gh pr view $PR_NUMBER --json baseRefName,headRefName,headRefOid --repo ${{ github.repository }})
+            BASE_REF=$(echo $PR_DATA | jq -r '.baseRefName')
+            HEAD_SHA=$(echo $PR_DATA | jq -r '.headRefOid')
+            BASE_SHA=$(gh api repos/${{ github.repository }}/git/ref/heads/$BASE_REF --jq '.object.sha')
+            
+            echo "base_ref=$BASE_REF" >> $GITHUB_OUTPUT
+            echo "base_sha=$BASE_SHA" >> $GITHUB_OUTPUT
+            echo "head_sha=$HEAD_SHA" >> $GITHUB_OUTPUT
+            
+            # Checkout PR head commit for issue comments
+            git fetch origin $HEAD_SHA
+            git checkout $HEAD_SHA
+          else
+            # For PR events, use event data directly
+            echo "base_ref=${{ github.event.pull_request.base.ref }}" >> $GITHUB_OUTPUT
+            echo "base_sha=${{ github.event.pull_request.base.sha }}" >> $GITHUB_OUTPUT
+            echo "head_sha=${{ github.event.pull_request.head.sha }}" >> $GITHUB_OUTPUT
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Cache base target artifacts
+        if: github.event.pull_request != null || github.event.issue.pull_request != null
+        id: cache-base-target
+        uses: actions/cache@v4
+        with:
+          path: target-base/
+          key: dbt-base-${{ steps.pr-info.outputs.base_ref }}-${{ steps.pr-info.outputs.base_sha }}-${{ hashFiles('models/**/*.sql', 'seeds/**/*.csv', 'dbt_project.yml') }}
+          restore-keys: |
+            dbt-base-${{ steps.pr-info.outputs.base_ref }}-${{ steps.pr-info.outputs.base_sha }}-
+            dbt-base-${{ steps.pr-info.outputs.base_ref }}-
+
+      - name: Prepare dbt Base environment
+        if: (github.event.pull_request != null || github.event.issue.pull_request != null) && steps.cache-base-target.outputs.cache-hit != 'true'
+        id: prepare-base
+        continue-on-error: true
+        run: |
+          # Save MCP config and other PR-specific files that might not exist in base branch
+          mkdir -p /tmp/pr-files
+          if [ -f ".github/mcp_config.json" ]; then
+            cp .github/mcp_config.json /tmp/pr-files/
+          fi
+          
+          # Checkout base branch to a detached HEAD
+          git fetch origin ${{ steps.pr-info.outputs.base_ref }}
+          git checkout -q origin/${{ steps.pr-info.outputs.base_ref }}
+          
+          # Generate base artifacts with error handling and capture exit codes
+          EXIT_CODE=0
+          dbt seed --target-path target-base || { echo "::warning::dbt seed failed for base environment"; EXIT_CODE=1; }
+          dbt run --target-path target-base || { echo "::warning::dbt run failed for base environment"; EXIT_CODE=1; }
+          dbt docs generate --target-path target-base || { echo "::warning::dbt docs generate failed for base environment"; EXIT_CODE=1; }
+          
+          # Return to original branch/commit
+          git checkout -q ${{ steps.pr-info.outputs.head_sha }}
+          
+          # Restore PR-specific files
+          if [ -f "/tmp/pr-files/mcp_config.json" ]; then
+            mkdir -p .github
+            cp /tmp/pr-files/mcp_config.json .github/
+          fi
+          
+          # Set output to indicate if base artifacts were successfully generated
+          echo "success=$([[ $EXIT_CODE -eq 0 ]] && echo 'true' || echo 'false')" >> $GITHUB_OUTPUT
+
+      - name: Validate Base Artifacts
+        if: github.event.pull_request != null || github.event.issue.pull_request != null
+        id: validate-base
+        run: |
+          # Check if base artifacts exist (either from cache or just generated)
+          if [ -f "target-base/manifest.json" ] && [ -f "target-base/catalog.json" ]; then
+            echo "✓ Base artifacts found"
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "::warning::Base artifacts not found. Recce comparison features may be limited."
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Prepare dbt Current environment
+        if: github.event.pull_request != null || github.event.issue.pull_request != null
+        id: prepare-current
+        continue-on-error: true
+        run: |
+          # Generate current artifacts with error handling
+          EXIT_CODE=0
+          dbt seed || { echo "::warning::dbt seed failed for current environment"; EXIT_CODE=1; }
+          dbt run || { echo "::warning::dbt run failed for current environment"; EXIT_CODE=1; }
+          dbt docs generate || { echo "::warning::dbt docs generate failed for current environment"; EXIT_CODE=1; }
+          
+          # Set output to indicate success
+          echo "success=$([[ $EXIT_CODE -eq 0 ]] && echo 'true' || echo 'false')" >> $GITHUB_OUTPUT
+
+      - name: Validate MCP Configuration
+        if: github.event.pull_request != null || github.event.issue.pull_request != null
+        run: |
+          # Show current working directory and files for debugging
+          echo "Current directory: $(pwd)"
+          echo "MCP config path: $(pwd)/.github/mcp_config.json"
+          ls -la .github/ || echo "No .github directory"
+          
+          # Validate MCP config file exists and is valid JSON
+          if [ -f ".github/mcp_config.json" ]; then
+            echo "✓ MCP configuration file found"
+            if jq empty .github/mcp_config.json 2>/dev/null; then
+              echo "✓ MCP configuration is valid JSON"
+              cat .github/mcp_config.json
+            else
+              echo "::error::MCP configuration is invalid JSON"
+              exit 1
+            fi
+          else
+            echo "::error::MCP configuration file not found at .github/mcp_config.json"
+            exit 1
+          fi
+          
+          # Check if Recce CLI is installed and has mcp-server command
+          if command -v recce >/dev/null 2>&1; then
+            echo "✓ Recce CLI is installed: $(which recce)"
+            # Test if mcp-server command is available
+            if recce mcp-server --help >/dev/null 2>&1; then
+              echo "✓ Recce MCP server command is available"
+            else
+              echo "::error::Recce CLI found but mcp-server command not available"
+              echo "This may indicate the feature branch is not installed correctly"
+              exit 1
+            fi
+          else
+            echo "::error::Recce CLI not found in PATH"
+            exit 1
+          fi
+
+      - name: Test Recce MCP Server
+        if: github.event.pull_request != null || github.event.issue.pull_request != null
+        run: |
+          echo "Testing Recce MCP server startup..."
+
+          echo "Testing Recce MCP server with full parameters..."
+          CMD="recce mcp-server --project-dir . --profiles-dir . --config recce.yml --target-path target --target-base-path target-base"
+          echo "Command: $CMD"
+
+          # 啟動並收集輸出
+          LOG_FILE="recce_mcp_startup.log"
+          timeout 5s bash -c "$CMD" >"$LOG_FILE" 2>&1 & 
+          MCP_PID=$!
+
+          sleep 1
+
+          if ! kill -0 "$MCP_PID" 2>/dev/null; then
+            echo "::error::Recce MCP server failed to start"
+            cat "$LOG_FILE" || true
+            exit 1
+          fi
+
+          # 檢查是否有「Too few parameters」錯誤
+          if grep -q "Too few parameters" "$LOG_FILE"; then
+            echo "::error::Recce MCP server start error detected: Too few parameters"
+            cat "$LOG_FILE"
+            kill "$MCP_PID" || true
+            exit 1
+          fi
+
+          # 可選：檢查 health/ping（若 server 支援）
+          # curl -sf http://localhost:PORT/health || { echo "::error::Health check failed"; exit 1; }
+
+          echo "✓ Recce MCP server started without parameter errors (PID: $MCP_PID)"
+          kill "$MCP_PID"
+
+      - name: Run Claude Code with Recce MCP
+        id: claude
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+
+          # This is an optional setting that allows Claude to read CI results on PRs
+          additional_permissions: |
+            actions: read
+
+          # Configure Recce MCP tools via claude_args
+          # Available tools: get_lineage_diff, row_count_diff, query, query_diff, profile_diff
+          # Note: Recce tools are only available when running in PR context with artifacts
+          claude_args: |
+            --mcp-config .github/mcp_config.json
+            --max-turns 50
+            --system-prompt "You are analyzing a dbt project Pull Request with Recce MCP tools available. Always start your PR analysis by using Recce MCP tools to compare base and current environments: 1) Use mcp__recce__get_lineage_diff to understand model changes, 2) Use mcp__recce__row_count_diff to check data volume changes, 3) Use mcp__recce__profile_diff for statistical analysis of key columns, 4) Use mcp__recce__query_diff to validate data quality. Prefer Recce MCP tools over manual queries for all dbt model comparisons and data validation. Always address the user's specific request from their @claude comment while providing comprehensive Recce-based analysis."
+            --allowedTools "Bash(recce),Bash(recce mcp-server),Bash(ls target/manifest.json),Bash(ls target-base/manifest.json),Bash(gh pr view:*),Bash(jq -r *),mcp__recce__get_lineage_diff,mcp__recce__row_count_diff,mcp__recce__query,mcp__recce__query_diff,mcp__recce__profile_diff"
+
