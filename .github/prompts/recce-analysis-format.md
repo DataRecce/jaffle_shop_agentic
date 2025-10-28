@@ -1,10 +1,12 @@
 # Recce PR Analysis Response Format
 
-When analyzing a dbt Pull Request, structure your response with the following sections. Use "PR Validation Summary" as the main title in your actual response.
+When analyzing a dbt Pull Request, you MUST structure your response with the following sections. Use "# PR Validation Summary" as the main title in your actual response.
+
+**CRITICAL**: Sections marked with [REQUIRED] MUST be included. Optional sections may be omitted if not applicable, but maintain the order of included sections.
 
 ---
 
-## ⚠ Anomalies Detected
+## [REQUIRED] ⚠ Anomalies Detected
 
 Use emoji indicators for severity:
 
@@ -17,7 +19,7 @@ If no critical issues, state: "✅ No critical anomalies detected"
 
 ---
 
-## Changes Overview
+## [REQUIRED] Changes Overview
 
 - Models: **X modified**, **Y new**, **Z removed**
 - Direct Changes (columns): **N total** — **X modified**, **Y added**, **Z removed**
@@ -42,7 +44,7 @@ If no critical issues, state: "✅ No critical anomalies detected"
 
 ---
 
-## ✅ Test Status
+## [OPTIONAL] ✅ Test Status
 
 - ✅ Schema validation: **N columns added/modified/removed**
 - ✅ Row count validation: **all stable** / specific changes noted
@@ -52,22 +54,33 @@ If no critical issues, state: "✅ No critical anomalies detected"
 
 ---
 
-## 📊 Validation Results
+## [REQUIRED] 📊 Validation Results
 
 ### Profile Diff
 
-Use table format to show key metrics (if available from `mcp__recce__profile_diff`):
+**REQUIRED**: Use table format to show key metrics from `mcp__recce__profile_diff`:
 
 | Metric                  | Current | Change | Threshold | Status     |
 | ----------------------- | ------- | ------ | --------- | ---------- |
 | model.column_name (avg) | value   | ±X%    | Y%        | ✅/⚠ Status |
 | model.column_name (sum) | value   | ±X%    | Y%        | ✅/⚠ Status |
 
-> **Note**: Fill values from Recce Profile Diff results. Use list format if complete data is unavailable.
+**Example with actual values:**
 
-### Top-K Affected Records (Optional)
+| Metric                                      | Current | Change | Threshold | Status     |
+| ------------------------------------------- | ------- | ------ | --------- | ---------- |
+| customers.customer_lifetime_value (avg)     | 124.8   | -32.1% | 30%       | ⚠ Exceeded |
+| customers.net_customer_lifetime_value (avg) | 98.4    | +2.3%  | 30%       | ✅ Within   |
+| orders.total_amount (sum)                   | 1245320 | -4.8%  | 10%       | ✅ Within   |
 
-If significant record-level changes detected, show top affected records:
+> **Note**: If table data is incomplete, use this list format instead:
+>
+> - `customers.customer_lifetime_value` (avg): 124.8 (change: -32.1%, threshold: 30%, ⚠ exceeded)
+> - `customers.net_customer_lifetime_value` (avg): 98.4 (change: +2.3%, threshold: 30%, ✅ within)
+
+### [OPTIONAL] Top-K Affected Records
+
+**Include this table ONLY when significant record-level anomalies are detected:**
 
 | Record ID | Previous Value | Current Value | Change | Note        |
 | --------- | -------------- | ------------- | ------ | ----------- |
@@ -76,23 +89,23 @@ If significant record-level changes detected, show top affected records:
 
 > **Note**: Fill with actual Diff results. Only provide this table when significant anomalies are detected.
 
-### Row Count Diff
+### [REQUIRED] Row Count Diff
 
-Use `mcp__recce__row_count_diff` results:
+Use `mcp__recce__row_count_diff` results (prefer table format):
 
 - `model_name`: current_count (change: ±X rows, ±Y%)
 - `model_name`: current_count (✅ stable)
 
 ---
 
-## 🔍 Review Required
+## [REQUIRED] 🔍 Review Required
 
 - Investigate drivers of [specific metric] **±X%**; confirm the [change description] is intentional.
 - Verify if the **N newly NULL/changed** records are expected (data quality or model logic issue?).
 - Validate whether downstream [affected models/columns] show unreasonable changes.
 - Confirm business logic changes align with requirements.
 
-## ✅ Suggested Checks
+## [OPTIONAL] ✅ Suggested Checks
 
 Provide actionable check references (format: `Check type: targets`):
 
@@ -102,7 +115,7 @@ Provide actionable check references (format: `Check type: targets`):
 - Downstream validation: `downstream_model.column_name`
 - Query validation: [specific business logic or metric]
 
-## 🧭 Decision Guide
+## [REQUIRED] 🧭 Decision Guide
 
 - **Merge if**: [Critical changes] are **confirmed and expected**, [Anomalies] are **explained and acceptable**, downstream impacts are **validated with no issues**.
 - **Investigate further if**: [Issues] are **unexpected** or data quality concerns are **unclear**; run suggested checks before deciding to merge.
@@ -124,3 +137,19 @@ Provide actionable check references (format: `Check type: targets`):
 - Link specific record IDs when referencing data quality issues
 - Keep language concise and action-oriented
 - Use proper markdown table formatting with aligned columns
+
+---
+
+## ✅ Output Validation Checklist
+
+Before submitting your response, verify:
+
+- [ ] Main title is "# PR Validation Summary"
+- [ ] All [REQUIRED] sections are included in order
+- [ ] Section titles match exactly (including emoji indicators)
+- [ ] Major sections separated with `---` horizontal rules
+- [ ] Profile Diff uses table format (or list with explanation)
+- [ ] Row Count Diff section is present
+- [ ] Concrete values used instead of placeholders
+- [ ] Decision Guide provides clear merge/investigate/block guidance
+- [ ] Based on actual Recce MCP tool results, not assumptions

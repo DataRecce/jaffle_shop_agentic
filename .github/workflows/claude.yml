@@ -55,11 +55,14 @@ jobs:
       - name: Cache Python dependencies
         uses: actions/cache@v4
         with:
-          path: ~/.cache/pip
-          key: pip-${{ hashFiles('requirements.txt') }}-recce-drc-1893
+          path: |
+            ~/.cache/pip
+            ~/.local/lib/python3.10/site-packages
+          key: pip-recce-${{ runner.os }}-py3.10-${{ hashFiles('requirements.txt', 'recce-repo/setup.py', 'recce-repo/recce/VERSION') }}
           restore-keys: |
-            pip-${{ hashFiles('requirements.txt') }}-
-            pip-
+            pip-recce-${{ runner.os }}-py3.10-${{ hashFiles('requirements.txt') }}-
+            pip-recce-${{ runner.os }}-py3.10-
+            pip-recce-
 
       - name: Cache dbt packages
         uses: actions/cache@v4
@@ -109,11 +112,11 @@ jobs:
           # Install Recce with all dependencies
           # Using -e for editable mode, with explicit dependency installation
           echo "Installing Recce from source with all dependencies..."
-          pip install -e "./recce-repo[dev]" --no-cache-dir
+          pip install -e "./recce-repo[dev]"
           
           # Install any missing common dependencies that might not be in setup.py
           echo "Installing additional common dependencies..."
-          pip install pytz tzdata --no-cache-dir
+          pip install pytz tzdata
           
           # Verify installation
           if command -v recce >/dev/null 2>&1; then
@@ -237,44 +240,70 @@ jobs:
         id: system-prompt
         run: |
           # Load response format template
-          if [ -f ".github/prompts/recce-analysis-format.md" ]; then
-            FORMAT_GUIDE=$(cat .github/prompts/recce-analysis-format.md)
-          else
-            echo "::warning::Response format guide not found, using default"
-            FORMAT_GUIDE=""
+          if [ ! -f ".github/prompts/recce-analysis-format.md" ]; then
+            echo "::error::Response format guide not found at .github/prompts/recce-analysis-format.md"
+            exit 1
           fi
           
-          # Compose complete system prompt
+          FORMAT_GUIDE=$(cat .github/prompts/recce-analysis-format.md)
+          
+          # Compose complete system prompt with mandatory format enforcement
           cat > /tmp/system_prompt.txt <<'PROMPT_EOF'
-          You are analyzing a dbt project Pull Request with Recce MCP tools available.
+You are analyzing a dbt project Pull Request with Recce MCP tools available.
+
+## Analysis Workflow
+
+MANDATORY STEPS - Execute in this order:
+1. Use mcp__recce__get_lineage_diff to understand model changes
+2. Use mcp__recce__row_count_diff to check data volume changes  
+3. Use mcp__recce__profile_diff for statistical analysis of key columns
+4. Use mcp__recce__query_diff to validate data quality when applicable
+
+Prefer Recce MCP tools over manual queries for all dbt model comparisons and data validation.
+
+## Response Format Requirements
+
+YOU MUST structure your PR analysis response using the EXACT format defined below.
+
+CRITICAL RULES (NON-NEGOTIABLE):
+1. Use "# PR Validation Summary" as the main title (H1 heading)
+2. Follow the section order EXACTLY as specified
+3. Use the EXACT section titles with emoji indicators
+4. Separate major sections with "---" horizontal rules
+5. Include ALL [REQUIRED] sections even if content is brief
+6. You may omit [OPTIONAL] sections if not applicable, but maintain section order
+7. For Profile Diff and Row Count data, PREFER markdown tables; use lists ONLY if table data is incomplete
+8. Use concrete values from Recce tool results, NEVER use placeholders like "X" or "value"
+
+PROMPT_EOF
           
-          ## Analysis Workflow
-          Always start your PR analysis by using Recce MCP tools to compare base and current environments:
-          1. Use mcp__recce__get_lineage_diff to understand model changes
-          2. Use mcp__recce__row_count_diff to check data volume changes  
-          3. Use mcp__recce__profile_diff for statistical analysis of key columns
-          4. Use mcp__recce__query_diff to validate data quality
+          # Append the complete format template
+          echo "" >> /tmp/system_prompt.txt
+          echo "$FORMAT_GUIDE" >> /tmp/system_prompt.txt
           
-          Prefer Recce MCP tools over manual queries for all dbt model comparisons and data validation.
-          
-          ## Response Format
-          PROMPT_EOF
-          
-          if [ -n "$FORMAT_GUIDE" ]; then
-            echo "$FORMAT_GUIDE" >> /tmp/system_prompt.txt
-          fi
-          
+          # Add execution notes
           cat >> /tmp/system_prompt.txt <<'PROMPT_EOF'
+
+---
+
+## Execution Notes
+
+- Address the user's specific @claude comment request while following the format
+- Base ALL analysis on actual Recce MCP tool results, not assumptions
+- Provide concrete numbers, percentages, and record IDs
+- If a [REQUIRED] section has no data, state "No [data type] detected" rather than omitting it
+- Before submitting, mentally verify against the Output Validation Checklist in the format guide
+
+REMEMBER: The format is mandatory. Deviation from section titles, order, or structure is not acceptable.
+PROMPT_EOF
           
-          ## Important
-          - Always address the user's specific request from their @claude comment
-          - Provide comprehensive Recce-based analysis
-          - Be concise but thorough
-          - Use structured format for better readability
-          PROMPT_EOF
-          
-          # Store prompt for next step (escape for use in command line)
+          # Store prompt file path for next step
           echo "prompt_file=/tmp/system_prompt.txt" >> $GITHUB_OUTPUT
+          
+          # Display prompt for debugging (first 50 lines)
+          echo "::group::System Prompt Preview"
+          head -50 /tmp/system_prompt.txt
+          echo "::endgroup::"
 
       - name: Validate MCP Configuration
         if: github.event.pull_request != null || github.event.issue.pull_request != null
@@ -344,9 +373,6 @@ jobs:
             kill "$MCP_PID" || true
             exit 1
           fi
-
-          # 可選：檢查 health/ping（若 server 支援）
-          # curl -sf http://localhost:PORT/health || { echo "::error::Health check failed"; exit 1; }
 
           echo "✓ Recce MCP server started without parameter errors (PID: $MCP_PID)"
           kill "$MCP_PID"
