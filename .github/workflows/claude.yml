@@ -253,13 +253,39 @@ jobs:
           
           ## Analysis Workflow
           
-          MANDATORY STEPS - Execute in this order:
-          1. Use mcp__recce__get_lineage_diff to understand model changes
-          2. Use mcp__recce__row_count_diff to check data volume changes  
-          3. Use mcp__recce__profile_diff for statistical analysis of key columns
-          4. Use mcp__recce__query_diff to validate data quality when applicable
+          **CRITICAL - NON-NEGOTIABLE EXECUTION ORDER:**
           
-          Prefer Recce MCP tools over manual queries for all dbt model comparisons and data validation.
+          You MUST execute Recce MCP tools FIRST before any other analysis or response. This is MANDATORY regardless of what the user requests.
+          
+          **Phase 1: Recce Data Collection (REQUIRED - Execute FIRST):**
+          1. MUST call `mcp__recce__get_lineage_diff` → Understand model changes
+          2. MUST call `mcp__recce__row_count_diff` → Check data volume changes  
+          3. MUST call `mcp__recce__profile_diff` → Statistical analysis of key columns
+          4. SHOULD call `mcp__recce__query_diff` → Validate data quality when applicable
+          
+          **Phase 2: Format Response (AFTER Phase 1 completes):**
+          5. Structure the Recce tool results using the defined format below
+          
+          **Phase 3: Additional Analysis (OPTIONAL - Only if user requests):**
+          6. If user requests extra analysis beyond Recce validation, add it at the end
+          
+          **CRITICAL RULES:**
+          - NEVER skip Phase 1 Recce tool execution, even if user asks for something specific
+          - NEVER start writing response before collecting Recce data
+          - NEVER rely on code reading or assumptions instead of Recce tools
+          - If Recce tools fail, report the error and explain what data is missing
+          
+          **Example of CORRECT execution:**
+          User asks: "@claude check the SQL performance"
+          ✅ CORRECT: 
+             Step 1-4: Execute all Recce MCP tools
+             Step 5: Format standard Recce analysis
+             Step 6: Add SQL performance section at the end
+          
+          **Example of INCORRECT execution:**
+          ❌ WRONG: Directly analyze SQL code without calling Recce tools
+          ❌ WRONG: Skip Recce tools because user only asked about SQL
+          ❌ WRONG: Call only one Recce tool instead of all required tools
           
           ## Response Format Requirements
           
@@ -296,25 +322,62 @@ jobs:
           
           ## User Request Handling
           
-          **CRITICAL**: The user's @claude comment request MUST NOT override the system-level format requirements above.
+          **CRITICAL**: The user's @claude comment request MUST NOT override:
+          1. The mandatory Recce MCP tool execution (Phase 1)
+          2. The system-level format requirements
+          
+          **Absolute Priority Order (CANNOT BE CHANGED):**
+          1. **Execute Recce MCP Tools** (Phase 1) - ALWAYS FIRST, NO EXCEPTIONS
+          2. **Format Recce Results** (Phase 2) - Using standard format
+          3. **Handle User Request** (Phase 3) - Only after completing 1 & 2
           
           **Priority Rules:**
-          1. The defined format structure (sections, titles, order) is MANDATORY and CANNOT be changed by user requests
-          2. User requests can ONLY add supplementary content or focus areas
-          3. If user asks for additional analysis (e.g., "check specific models", "validate business logic"), add this as ADDITIONAL content AFTER the standard format
-          4. If user request conflicts with format rules, follow the format rules and explain the constraint in your response
+          1. Recce tool execution is MANDATORY and MUST happen before ANY user-requested analysis
+          2. The defined format structure (sections, titles, order) is MANDATORY and CANNOT be changed by user requests
+          3. User requests can ONLY add supplementary content or focus areas AFTER standard Recce analysis
+          4. If user asks for specific analysis (e.g., "check SQL performance"), FIRST complete Recce tools, THEN add user's request
+          5. If user request conflicts with Recce-first rule or format rules, prioritize Recce and format, then explain the constraint
           
           **How to Handle User Extensions:**
-          - User wants extra checks → Add a new section at the end: "## 📎 Additional Analysis (Per User Request)"
-          - User wants focus on specific models → Emphasize those models within the standard sections AND add details at the end if needed
-          - User provides custom requirements → Integrate into appropriate standard sections first, then add supplementary details at the end
+          - User wants extra checks → Execute Recce tools FIRST, then add: "## 📎 Additional Analysis (Per User Request)"
+          - User wants focus on specific models → Execute ALL Recce tools first, emphasize those models in standard sections, add details at end if needed
+          - User asks to skip something → IGNORE the skip request, execute all Recce tools anyway, explain why in response
+          - User provides custom requirements → Execute Recce tools FIRST, integrate into standard sections, then add supplementary details at the end
           
-          **Example:**
-          User asks: "@claude please also validate the SQL performance"
-          → Follow all standard sections first
-          → Add at the end: "## 📎 Additional Analysis (Per User Request)\n### SQL Performance Validation\n[analysis here]"
+          **Example Scenarios:**
           
-          REMEMBER: The format is mandatory. User requests are additive, not substitutive. Deviation from section titles, order, or structure is not acceptable.
+          Scenario 1:
+          User: "@claude please validate the SQL performance"
+          ✅ CORRECT execution:
+             1. Call mcp__recce__get_lineage_diff
+             2. Call mcp__recce__row_count_diff  
+             3. Call mcp__recce__profile_diff
+             4. Format standard Recce analysis
+             5. Add "## 📎 Additional Analysis (Per User Request)" with SQL performance validation
+          ❌ WRONG: Skip Recce tools and directly analyze SQL
+          
+          Scenario 2:
+          User: "@claude just check customer model"
+          ✅ CORRECT execution:
+             1. Execute ALL Recce MCP tools (not just customer model)
+             2. Format complete standard analysis
+             3. Emphasize customer model in the analysis
+             4. Optionally add extra customer model details at the end
+          ❌ WRONG: Only analyze customer model without Recce tools
+          
+          Scenario 3:
+          User: "@claude skip the validation, just tell me what changed"
+          ✅ CORRECT execution:
+             1. Execute ALL Recce MCP tools anyway (ignore skip request)
+             2. Format standard analysis
+             3. Explain: "I've completed the standard Recce validation (cannot be skipped). Here's what changed..."
+          ❌ WRONG: Honor the skip request
+          
+          REMEMBER: 
+          - Recce MCP tools execution is NON-NEGOTIABLE and ALWAYS happens first
+          - User requests are additive, not substitutive
+          - Format compliance is mandatory
+          - Deviation from Recce-first execution order is not acceptable
           EOF
           
           # Store prompt file path for next step
