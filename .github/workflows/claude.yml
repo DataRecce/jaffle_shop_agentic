@@ -245,9 +245,9 @@ jobs:
           # Generate base artifacts with error handling and capture exit codes
           echo "Generating base artifacts..."
           EXIT_CODE=0
-          dbt seed --target-path target-base || { echo "::warning::dbt seed failed for base environment"; EXIT_CODE=1; }
-          dbt run --target-path target-base || { echo "::warning::dbt run failed for base environment"; EXIT_CODE=1; }
-          dbt docs generate --target-path target-base || { echo "::warning::dbt docs generate failed for base environment"; EXIT_CODE=1; }
+          dbt seed --target prod --target-path target-base || { echo "::warning::dbt seed failed for base environment"; EXIT_CODE=1; }
+          dbt run --target prod --target-path target-base || { echo "::warning::dbt run failed for base environment"; EXIT_CODE=1; }
+          dbt docs generate --target prod --target-path target-base || { echo "::warning::dbt docs generate failed for base environment"; EXIT_CODE=1; }
 
           # Return to original branch/commit
           echo "Returning to PR head..."
