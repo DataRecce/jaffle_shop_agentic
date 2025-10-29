@@ -144,7 +144,7 @@ Provide actionable check references (format: `Check type: targets`):
 
 Before submitting your response, verify:
 
-- [ ] Main title is "# PR Validation Summary"
+- [ ] Main title is "# PR Validation Summary for draft"
 - [ ] All [REQUIRED] sections are included in order
 - [ ] Section titles match exactly (including emoji indicators)
 - [ ] Major sections separated with `---` horizontal rules
