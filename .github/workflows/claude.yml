@@ -156,9 +156,20 @@ jobs:
             echo "::notice::PR Base Branch: $BASE_REF (SHA: $BASE_SHA)"
             echo "::notice::PR Head SHA: $HEAD_SHA"
 
+            # Clean working directory before checkout to avoid conflicts
+            echo "Cleaning working directory before checkout..."
+            git add -A
+            git stash push -m "Temporary stash before PR head checkout" || echo "Nothing to stash"
+
             # Checkout PR head commit for issue comments
+            echo "Checking out PR head commit..."
             git fetch origin $HEAD_SHA
             git checkout $HEAD_SHA
+
+            # Restore stashed changes if any
+            if git stash list | grep -q "Temporary stash before PR head checkout"; then
+              git stash pop || echo "::warning::Could not restore stashed changes"
+            fi
           else
             # For PR events, use event data directly
             BASE_REF="${{ github.event.pull_request.base.ref }}"
