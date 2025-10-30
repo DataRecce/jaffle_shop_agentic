@@ -1,0 +1,160 @@
+name: dbt Build Artifacts
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  dbt-build:
+    # Only run on PR-related events
+    if: |
+      github.event.pull_request != null || 
+      github.event.issue.pull_request != null
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
+    env:
+      # Default to DuckDB if DB_TYPE is not set
+      DB_TYPE: ${{ vars.DB_TYPE || 'duckdb' }}
+      # Snowflake credentials (only used if DB_TYPE == 'snowflake')
+      SNOWFLAKE_ACCOUNT: ${{ vars.DB_TYPE == 'snowflake' && secrets.SNOWFLAKE_ACCOUNT || '' }}
+      SNOWFLAKE_USER: ${{ vars.DB_TYPE == 'snowflake' && secrets.SNOWFLAKE_USER || '' }}
+      SNOWFLAKE_PASSWORD: ${{ vars.DB_TYPE == 'snowflake' && secrets.SNOWFLAKE_PASSWORD || '' }}
+      SNOWFLAKE_ROLE: ${{ vars.DB_TYPE == 'snowflake' && secrets.SNOWFLAKE_ROLE || 'RECCE' }}
+      SNOWFLAKE_SCHEMA: ${{ vars.DB_TYPE == 'snowflake' && format('PR_{0}', github.event.pull_request.number || github.event.issue.number) || '' }}
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          # For PR events, checkout PR head; for issue_comment, will be updated in Get PR information step
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Cache Python dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pip
+            ~/.local/lib/python3.10/site-packages
+          key: pip-dbt-${{ runner.os }}-py3.10-${{ env.DB_TYPE }}-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            pip-dbt-${{ runner.os }}-py3.10-${{ env.DB_TYPE }}-
+            pip-dbt-${{ runner.os }}-py3.10-
+
+      - name: Cache dbt packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            dbt_packages/
+            ~/.dbt/
+          key: dbt-packages-${{ hashFiles('packages.yml') }}
+          restore-keys: |
+            dbt-packages-
+
+      - name: Install Python dependencies
+        run: |
+          pip install -r requirements.txt
+
+      - name: Install dbt packages
+        run: |
+          dbt deps
+
+      - name: Display database configuration
+        run: |
+          echo "::notice::Database Type: ${{ env.DB_TYPE }}"
+          if [ "${{ env.DB_TYPE }}" == "snowflake" ]; then
+            echo "::notice::Using Snowflake with schema: ${{ env.SNOWFLAKE_SCHEMA }}"
+          else
+            echo "::notice::Using DuckDB (default)"
+          fi
+
+      - name: Get PR information
+        id: pr-info
+        run: |
+          # For PR events, use event data directly
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+
+          echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
+          echo "head_sha=$HEAD_SHA" >> $GITHUB_OUTPUT
+
+          # Debug output
+          echo "::notice::PR Number: $PR_NUMBER"
+          echo "::notice::PR Head SHA: $HEAD_SHA"
+
+      - name: Build dbt Current environment
+        id: build-current
+        continue-on-error: true
+        run: |
+          echo "::group::Generating current environment artifacts"
+          echo "Current branch/commit: ${{ steps.pr-info.outputs.head_sha }}"
+
+          # Generate current artifacts with error handling (already on PR head)
+          EXIT_CODE=0
+          dbt seed || { echo "::warning::dbt seed failed for current environment"; EXIT_CODE=1; }
+          dbt run || { echo "::warning::dbt run failed for current environment"; EXIT_CODE=1; }
+          dbt docs generate || { echo "::warning::dbt docs generate failed for current environment"; EXIT_CODE=1; }
+
+          # Set output to indicate success
+          echo "success=$([[ $EXIT_CODE -eq 0 ]] && echo 'true' || echo 'false')" >> $GITHUB_OUTPUT
+          echo "::endgroup::"
+
+      - name: Update Recce PR Session
+        uses: DataRecce/recce-cloud-cicd-action@v1
+
+      - name: Validate artifacts
+        id: validate
+        run: |
+          echo "::group::Validating generated artifacts"
+          
+          # Check current artifacts
+          if [ -f "target/manifest.json" ] && [ -f "target/catalog.json" ]; then
+            echo "✓ Current artifacts found"
+            echo "current_exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "::error::Current artifacts not found"
+            echo "current_exists=false" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+          
+          echo "::endgroup::"
+
+      - name: Upload current artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dbt-artifacts-current-${{ steps.pr-info.outputs.pr_number }}
+          path: target/
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## dbt PR Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**PR Number:** #${{ steps.pr-info.outputs.pr_number }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Database Type:** ${{ env.DB_TYPE }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** ${{ steps.pr-info.outputs.head_sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Build Status" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ steps.build-current.outcome }}" == "success" ]; then
+            echo "✅ **Current artifacts:** Generated and uploaded as \`dbt-artifacts-current-${{ steps.pr-info.outputs.pr_number }}\`" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Current artifacts:** Build failed" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "📦 **Base artifacts:** Will be downloaded from \`dbt Base Environment\` workflow" >> $GITHUB_STEP_SUMMARY
+          echo "   - Artifact name: \`dbt-artifacts-base-main\`" >> $GITHUB_STEP_SUMMARY
+          echo "   - Updated when: main branch changes or weekly schedule" >> $GITHUB_STEP_SUMMARY
+
