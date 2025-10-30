@@ -1,0 +1,299 @@
+name: dbt Build Artifacts
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+  issues:
+    types: [opened, assigned]
+  pull_request_review:
+    types: [submitted]
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  dbt-build:
+    # Only run on PR-related events
+    if: |
+      github.event.pull_request != null || 
+      github.event.issue.pull_request != null
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
+    env:
+      # Default to DuckDB if DB_TYPE is not set
+      DB_TYPE: ${{ vars.DB_TYPE || 'duckdb' }}
+      # Snowflake credentials (only used if DB_TYPE == 'snowflake')
+      SNOWFLAKE_ACCOUNT: ${{ vars.DB_TYPE == 'snowflake' && secrets.SNOWFLAKE_ACCOUNT || '' }}
+      SNOWFLAKE_USER: ${{ vars.DB_TYPE == 'snowflake' && secrets.SNOWFLAKE_USER || '' }}
+      SNOWFLAKE_PASSWORD: ${{ vars.DB_TYPE == 'snowflake' && secrets.SNOWFLAKE_PASSWORD || '' }}
+      SNOWFLAKE_ROLE: ${{ vars.DB_TYPE == 'snowflake' && secrets.SNOWFLAKE_ROLE || 'RECCE' }}
+      SNOWFLAKE_SCHEMA: ${{ vars.DB_TYPE == 'snowflake' && format('PR_{0}', github.event.pull_request.number || github.event.issue.number) || '' }}
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          # For PR events, checkout PR head; for issue_comment, will be updated in Get PR information step
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Cache Python dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pip
+            ~/.local/lib/python3.10/site-packages
+          key: pip-dbt-${{ runner.os }}-py3.10-${{ env.DB_TYPE }}-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            pip-dbt-${{ runner.os }}-py3.10-${{ env.DB_TYPE }}-
+            pip-dbt-${{ runner.os }}-py3.10-
+
+      - name: Cache dbt packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            dbt_packages/
+            ~/.dbt/
+          key: dbt-packages-${{ hashFiles('packages.yml') }}
+          restore-keys: |
+            dbt-packages-
+
+      - name: Install Python dependencies
+        run: |
+          pip install -r requirements.txt
+
+      - name: Install dbt packages
+        run: |
+          dbt deps
+
+      - name: Display database configuration
+        run: |
+          echo "::notice::Database Type: ${{ env.DB_TYPE }}"
+          if [ "${{ env.DB_TYPE }}" == "snowflake" ]; then
+            echo "::notice::Using Snowflake with schema: ${{ env.SNOWFLAKE_SCHEMA }}"
+          else
+            echo "::notice::Using DuckDB (default)"
+          fi
+
+      - name: Get PR information
+        id: pr-info
+        run: |
+          if [ "${{ github.event_name }}" == "issue_comment" ]; then
+            # For issue comments on PRs, fetch PR details
+            PR_NUMBER=${{ github.event.issue.number }}
+            PR_DATA=$(gh pr view $PR_NUMBER --json baseRefName,headRefName,headRefOid --repo ${{ github.repository }})
+            BASE_REF=$(echo $PR_DATA | jq -r '.baseRefName')
+            HEAD_SHA=$(echo $PR_DATA | jq -r '.headRefOid')
+            BASE_SHA=$(gh api repos/${{ github.repository }}/git/ref/heads/$BASE_REF --jq '.object.sha')
+
+            echo "base_ref=$BASE_REF" >> $GITHUB_OUTPUT
+            echo "base_sha=$BASE_SHA" >> $GITHUB_OUTPUT
+            echo "head_sha=$HEAD_SHA" >> $GITHUB_OUTPUT
+            echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
+
+            # Debug output
+            echo "::notice::PR Base Branch: $BASE_REF (SHA: $BASE_SHA)"
+            echo "::notice::PR Head SHA: $HEAD_SHA"
+
+            # Clean working directory before checkout to avoid conflicts
+            echo "Cleaning working directory before checkout..."
+            git add -A
+            git stash push -m "Temporary stash before PR head checkout" || echo "Nothing to stash"
+
+            # Checkout PR head commit for issue comments
+            echo "Checking out PR head commit..."
+            git fetch origin $HEAD_SHA
+            git checkout $HEAD_SHA
+
+            # Restore stashed changes if any
+            if git stash list | grep -q "Temporary stash before PR head checkout"; then
+              git stash pop || echo "::warning::Could not restore stashed changes"
+            fi
+          else
+            # For PR events, use event data directly
+            BASE_REF="${{ github.event.pull_request.base.ref }}"
+            BASE_SHA="${{ github.event.pull_request.base.sha }}"
+            HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+            PR_NUMBER="${{ github.event.pull_request.number }}"
+
+            echo "base_ref=$BASE_REF" >> $GITHUB_OUTPUT
+            echo "base_sha=$BASE_SHA" >> $GITHUB_OUTPUT
+            echo "head_sha=$HEAD_SHA" >> $GITHUB_OUTPUT
+            echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
+
+            # Debug output
+            echo "::notice::PR Base Branch: $BASE_REF (SHA: $BASE_SHA)"
+            echo "::notice::PR Head SHA: $HEAD_SHA"
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Build dbt Current environment
+        id: build-current
+        continue-on-error: true
+        run: |
+          echo "::group::Generating current environment artifacts"
+          echo "Current branch/commit: ${{ steps.pr-info.outputs.head_sha }}"
+
+          # Generate current artifacts with error handling (already on PR head)
+          EXIT_CODE=0
+          dbt seed || { echo "::warning::dbt seed failed for current environment"; EXIT_CODE=1; }
+          dbt run || { echo "::warning::dbt run failed for current environment"; EXIT_CODE=1; }
+          dbt docs generate || { echo "::warning::dbt docs generate failed for current environment"; EXIT_CODE=1; }
+
+          # Set output to indicate success
+          echo "success=$([[ $EXIT_CODE -eq 0 ]] && echo 'true' || echo 'false')" >> $GITHUB_OUTPUT
+          echo "::endgroup::"
+
+      - name: Update Recce PR Session
+        uses: DataRecce/recce-cloud-cicd-action@v1
+
+      - name: Cache base target artifacts
+        id: cache-base-target
+        uses: actions/cache@v4
+        with:
+          path: target-base/
+          key: dbt-base-${{ env.DB_TYPE }}-${{ steps.pr-info.outputs.base_ref }}-${{ steps.pr-info.outputs.base_sha }}-${{ hashFiles('models/**/*.sql', 'seeds/**/*.csv', 'dbt_project.yml') }}
+          restore-keys: |
+            dbt-base-${{ env.DB_TYPE }}-${{ steps.pr-info.outputs.base_ref }}-${{ steps.pr-info.outputs.base_sha }}-
+            dbt-base-${{ env.DB_TYPE }}-${{ steps.pr-info.outputs.base_ref }}-
+
+      - name: Build dbt Base environment
+        if: steps.cache-base-target.outputs.cache-hit != 'true'
+        id: build-base
+        continue-on-error: true
+        run: |
+          echo "::group::Generating base environment artifacts"
+          echo "Base branch: ${{ steps.pr-info.outputs.base_ref }}"
+          echo "Base SHA: ${{ steps.pr-info.outputs.base_sha }}"
+
+          # Save PR-specific files that might not exist in base branch
+          mkdir -p /tmp/pr-files
+          if [ -f ".github/mcp_config.json" ]; then
+            cp .github/mcp_config.json /tmp/pr-files/
+          fi
+          if [ -f "recce.yml" ]; then
+            cp recce.yml /tmp/pr-files/
+          fi
+
+          # Clean working directory before checkout to avoid conflicts with new files
+          echo "Cleaning working directory..."
+          git add -A
+          git stash push -m "Temporary stash before base checkout" || echo "Nothing to stash"
+
+          # Checkout base branch to a detached HEAD
+          echo "Checking out base branch..."
+          git fetch origin ${{ steps.pr-info.outputs.base_ref }}
+          git checkout -q origin/${{ steps.pr-info.outputs.base_ref }}
+
+          # Generate base artifacts with error handling and capture exit codes
+          echo "Generating base artifacts..."
+          EXIT_CODE=0
+          dbt seed --target-path target-base || { echo "::warning::dbt seed failed for base environment"; EXIT_CODE=1; }
+          dbt run --target-path target-base || { echo "::warning::dbt run failed for base environment"; EXIT_CODE=1; }
+          dbt docs generate --target-path target-base || { echo "::warning::dbt docs generate failed for base environment"; EXIT_CODE=1; }
+
+          # Return to original branch/commit
+          echo "Returning to PR head..."
+          git checkout -q ${{ steps.pr-info.outputs.head_sha }}
+
+          # Restore stashed changes if any
+          if git stash list | grep -q "Temporary stash before base checkout"; then
+            git stash pop || echo "::warning::Could not restore stashed changes"
+          fi
+
+          # Restore PR-specific files
+          if [ -f "/tmp/pr-files/mcp_config.json" ]; then
+            mkdir -p .github
+            cp /tmp/pr-files/mcp_config.json .github/
+          fi
+          if [ -f "/tmp/pr-files/recce.yml" ]; then
+            cp /tmp/pr-files/recce.yml .
+          fi
+
+          # Set output to indicate if base artifacts were successfully generated
+          echo "success=$([[ $EXIT_CODE -eq 0 ]] && echo 'true' || echo 'false')" >> $GITHUB_OUTPUT
+          echo "::endgroup::"
+      
+      - name: Update Recce PR Session
+        uses: DataRecce/recce-cloud-cicd-action@v1
+        with:
+          dbt_target_path: target-base
+
+      - name: Validate artifacts
+        id: validate
+        run: |
+          echo "::group::Validating generated artifacts"
+          
+          # Check current artifacts
+          if [ -f "target/manifest.json" ] && [ -f "target/catalog.json" ]; then
+            echo "✓ Current artifacts found"
+            echo "current_exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "::warning::Current artifacts not found"
+            echo "current_exists=false" >> $GITHUB_OUTPUT
+          fi
+
+          # Check base artifacts
+          if [ -f "target-base/manifest.json" ] && [ -f "target-base/catalog.json" ]; then
+            echo "✓ Base artifacts found"
+            echo "base_exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "::warning::Base artifacts not found"
+            echo "base_exists=false" >> $GITHUB_OUTPUT
+          fi
+          
+          echo "::endgroup::"
+
+      - name: Upload current artifacts
+        if: steps.validate.outputs.current_exists == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: dbt-artifacts-current-${{ steps.pr-info.outputs.pr_number }}
+          path: target/
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: Upload base artifacts
+        if: steps.validate.outputs.base_exists == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: dbt-artifacts-base-${{ steps.pr-info.outputs.pr_number }}
+          path: target-base/
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## dbt Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Database Type:** ${{ env.DB_TYPE }}" >> $GITHUB_STEP_SUMMARY
+          echo "**PR Number:** ${{ steps.pr-info.outputs.pr_number }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Artifacts Status" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ steps.validate.outputs.current_exists }}" == "true" ]; then
+            echo "✅ **Current artifacts:** Generated and uploaded" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Current artifacts:** Failed to generate" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [ "${{ steps.validate.outputs.base_exists }}" == "true" ]; then
+            echo "✅ **Base artifacts:** Generated and uploaded" >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ steps.cache-base-target.outputs.cache-hit }}" == "true" ]; then
+            echo "♻️ **Base artifacts:** Restored from cache" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Base artifacts:** Failed to generate" >> $GITHUB_STEP_SUMMARY
+          fi
+
