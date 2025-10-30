@@ -31,9 +31,8 @@ jobs:
         with:
           repository: 'DataRecce/recce'
           path: 'recce-repo'
-          # TODO: Update to stable release tag once available (e.g., v1.0.0)
           # Currently using feature branch for MCP implementation
-          ref: 'feature/drc-1893-implement-the-mcp-server-in-recce'
+          ref: 'main'
           # Shallow clone to minimize download time and storage
           fetch-depth: 1
           # Disable sparse-checkout for now to ensure all necessary files for pip install are available
