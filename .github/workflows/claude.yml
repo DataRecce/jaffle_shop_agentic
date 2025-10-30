@@ -147,22 +147,63 @@ jobs:
             BASE_REF=$(echo $PR_DATA | jq -r '.baseRefName')
             HEAD_SHA=$(echo $PR_DATA | jq -r '.headRefOid')
             BASE_SHA=$(gh api repos/${{ github.repository }}/git/ref/heads/$BASE_REF --jq '.object.sha')
-            
+
             echo "base_ref=$BASE_REF" >> $GITHUB_OUTPUT
             echo "base_sha=$BASE_SHA" >> $GITHUB_OUTPUT
             echo "head_sha=$HEAD_SHA" >> $GITHUB_OUTPUT
-            
+
+            # Debug output
+            echo "::notice::PR Base Branch: $BASE_REF (SHA: $BASE_SHA)"
+            echo "::notice::PR Head SHA: $HEAD_SHA"
+
+            # Clean working directory before checkout to avoid conflicts
+            echo "Cleaning working directory before checkout..."
+            git add -A
+            git stash push -m "Temporary stash before PR head checkout" || echo "Nothing to stash"
+
             # Checkout PR head commit for issue comments
+            echo "Checking out PR head commit..."
             git fetch origin $HEAD_SHA
             git checkout $HEAD_SHA
+
+            # Restore stashed changes if any
+            if git stash list | grep -q "Temporary stash before PR head checkout"; then
+              git stash pop || echo "::warning::Could not restore stashed changes"
+            fi
           else
             # For PR events, use event data directly
-            echo "base_ref=${{ github.event.pull_request.base.ref }}" >> $GITHUB_OUTPUT
-            echo "base_sha=${{ github.event.pull_request.base.sha }}" >> $GITHUB_OUTPUT
-            echo "head_sha=${{ github.event.pull_request.head.sha }}" >> $GITHUB_OUTPUT
+            BASE_REF="${{ github.event.pull_request.base.ref }}"
+            BASE_SHA="${{ github.event.pull_request.base.sha }}"
+            HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+
+            echo "base_ref=$BASE_REF" >> $GITHUB_OUTPUT
+            echo "base_sha=$BASE_SHA" >> $GITHUB_OUTPUT
+            echo "head_sha=$HEAD_SHA" >> $GITHUB_OUTPUT
+
+            # Debug output
+            echo "::notice::PR Base Branch: $BASE_REF (SHA: $BASE_SHA)"
+            echo "::notice::PR Head SHA: $HEAD_SHA"
           fi
         env:
           GH_TOKEN: ${{ github.token }}
+
+      - name: Prepare dbt Current environment
+        if: github.event.pull_request != null || github.event.issue.pull_request != null
+        id: prepare-current
+        continue-on-error: true
+        run: |
+          echo "::group::Generating current environment artifacts"
+          echo "Current branch/commit: ${{ steps.pr-info.outputs.head_sha }}"
+
+          # Generate current artifacts with error handling (already on PR head)
+          EXIT_CODE=0
+          dbt seed || { echo "::warning::dbt seed failed for current environment"; EXIT_CODE=1; }
+          dbt run || { echo "::warning::dbt run failed for current environment"; EXIT_CODE=1; }
+          dbt docs generate || { echo "::warning::dbt docs generate failed for current environment"; EXIT_CODE=1; }
+
+          # Set output to indicate success
+          echo "success=$([[ $EXIT_CODE -eq 0 ]] && echo 'true' || echo 'false')" >> $GITHUB_OUTPUT
+          echo "::endgroup::"
 
       - name: Cache base target artifacts
         if: github.event.pull_request != null || github.event.issue.pull_request != null
@@ -180,33 +221,52 @@ jobs:
         id: prepare-base
         continue-on-error: true
         run: |
-          # Save MCP config and other PR-specific files that might not exist in base branch
+          echo "::group::Generating base environment artifacts"
+          echo "Base branch: ${{ steps.pr-info.outputs.base_ref }}"
+          echo "Base SHA: ${{ steps.pr-info.outputs.base_sha }}"
+
+          # Save PR-specific files that might not exist in base branch
           mkdir -p /tmp/pr-files
           if [ -f ".github/mcp_config.json" ]; then
             cp .github/mcp_config.json /tmp/pr-files/
           fi
-          
+
+          # Clean working directory before checkout to avoid conflicts with new files
+          # This prevents "untracked working tree files would be overwritten" errors
+          echo "Cleaning working directory..."
+          git add -A
+          git stash push -m "Temporary stash before base checkout" || echo "Nothing to stash"
+
           # Checkout base branch to a detached HEAD
+          echo "Checking out base branch..."
           git fetch origin ${{ steps.pr-info.outputs.base_ref }}
           git checkout -q origin/${{ steps.pr-info.outputs.base_ref }}
-          
+
           # Generate base artifacts with error handling and capture exit codes
+          echo "Generating base artifacts..."
           EXIT_CODE=0
           dbt seed --target-path target-base || { echo "::warning::dbt seed failed for base environment"; EXIT_CODE=1; }
           dbt run --target-path target-base || { echo "::warning::dbt run failed for base environment"; EXIT_CODE=1; }
           dbt docs generate --target-path target-base || { echo "::warning::dbt docs generate failed for base environment"; EXIT_CODE=1; }
-          
+
           # Return to original branch/commit
+          echo "Returning to PR head..."
           git checkout -q ${{ steps.pr-info.outputs.head_sha }}
-          
+
+          # Restore stashed changes if any
+          if git stash list | grep -q "Temporary stash before base checkout"; then
+            git stash pop || echo "::warning::Could not restore stashed changes"
+          fi
+
           # Restore PR-specific files
           if [ -f "/tmp/pr-files/mcp_config.json" ]; then
             mkdir -p .github
             cp /tmp/pr-files/mcp_config.json .github/
           fi
-          
+
           # Set output to indicate if base artifacts were successfully generated
           echo "success=$([[ $EXIT_CODE -eq 0 ]] && echo 'true' || echo 'false')" >> $GITHUB_OUTPUT
+          echo "::endgroup::"
 
       - name: Validate Base Artifacts
         if: github.event.pull_request != null || github.event.issue.pull_request != null
@@ -220,20 +280,6 @@ jobs:
             echo "::warning::Base artifacts not found. Recce comparison features may be limited."
             echo "exists=false" >> $GITHUB_OUTPUT
           fi
-
-      - name: Prepare dbt Current environment
-        if: github.event.pull_request != null || github.event.issue.pull_request != null
-        id: prepare-current
-        continue-on-error: true
-        run: |
-          # Generate current artifacts with error handling
-          EXIT_CODE=0
-          dbt seed || { echo "::warning::dbt seed failed for current environment"; EXIT_CODE=1; }
-          dbt run || { echo "::warning::dbt run failed for current environment"; EXIT_CODE=1; }
-          dbt docs generate || { echo "::warning::dbt docs generate failed for current environment"; EXIT_CODE=1; }
-          
-          # Set output to indicate success
-          echo "success=$([[ $EXIT_CODE -eq 0 ]] && echo 'true' || echo 'false')" >> $GITHUB_OUTPUT
 
       - name: Prepare System Prompt
         if: github.event.pull_request != null || github.event.issue.pull_request != null
