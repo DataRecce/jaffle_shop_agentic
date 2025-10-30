@@ -3,17 +3,7 @@
     "recce": {
       "command": "recce",
       "args": [
-        "mcp-server",
-        "--project-dir",
-        ".",
-        "--profiles-dir",
-        ".",
-        "--config",
-        "recce.yml",
-        "--target-path",
-        "target",
-        "--target-base-path",
-        "target-base"
+        "mcp-server"
       ],
       "env": {}
     }

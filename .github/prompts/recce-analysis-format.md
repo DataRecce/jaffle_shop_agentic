@@ -44,7 +44,7 @@ If no critical issues, state: "✅ No critical anomalies detected"
 
 ---
 
-## [OPTIONAL] ✅ Test Status
+## [REQUIRED] ✅ Test Status
 
 - ✅ Schema validation: **N columns added/modified/removed**
 - ✅ Row count validation: **all stable** / specific changes noted
@@ -54,7 +54,22 @@ If no critical issues, state: "✅ No critical anomalies detected"
 
 ---
 
-## [REQUIRED] 📊 Validation Results
+## [OPTIONAL] 📊 Validation Results
+**OTIONAL**: Show the diff section only when the test status are ⚠  or ❌. Skip the section if it's ✅
+
+
+### Schema Diff
+Use `mcp__recce__schema_diff` results (prefer table format):
+
+- `model.column_name`: current_count (change: ±X rows, ±Y%)
+
+
+### Row Count Diff
+
+Use `mcp__recce__row_count_diff` results (prefer table format):
+
+- `model_name`: current_count (change: ±X rows, ±Y%)
+
 
 ### Profile Diff
 
@@ -78,7 +93,7 @@ If no critical issues, state: "✅ No critical anomalies detected"
 > - `customers.customer_lifetime_value` (avg): 124.8 (change: -32.1%, threshold: 30%, ⚠ exceeded)
 > - `customers.net_customer_lifetime_value` (avg): 98.4 (change: +2.3%, threshold: 30%, ✅ within)
 
-### [OPTIONAL] Top-K Affected Records
+### Top-K Affected Records
 
 **Include this table ONLY when significant record-level anomalies are detected:**
 
@@ -89,25 +104,16 @@ If no critical issues, state: "✅ No critical anomalies detected"
 
 > **Note**: Fill with actual Diff results. Only provide this table when significant anomalies are detected.
 
-### [REQUIRED] Row Count Diff
-
-Use `mcp__recce__row_count_diff` results (prefer table format):
-
-- `model_name`: current_count (change: ±X rows, ±Y%)
-- `model_name`: current_count (✅ stable)
 
 ---
 
-## [REQUIRED] 🔍 Review Required
+## [REQUIRED] 🔍 Suggested Checks
 
+Provide actionable check references (format: `Check type: targets`) based on validation suggestion: 
 - Investigate drivers of [specific metric] **±X%**; confirm the [change description] is intentional.
 - Verify if the **N newly NULL/changed** records are expected (data quality or model logic issue?).
 - Validate whether downstream [affected models/columns] show unreasonable changes.
 - Confirm business logic changes align with requirements.
-
-## [OPTIONAL] ✅ Suggested Checks
-
-Provide actionable check references (format: `Check type: targets`):
 
 - Row count diff: `model1`, `model2`
 - Distribution shift: `model.column_name`
@@ -115,19 +121,13 @@ Provide actionable check references (format: `Check type: targets`):
 - Downstream validation: `downstream_model.column_name`
 - Query validation: [specific business logic or metric]
 
-## [REQUIRED] 🧭 Decision Guide
-
-- **Merge if**: [Critical changes] are **confirmed and expected**, [Anomalies] are **explained and acceptable**, downstream impacts are **validated with no issues**.
-- **Investigate further if**: [Issues] are **unexpected** or data quality concerns are **unclear**; run suggested checks before deciding to merge.
-- **Block merge if**: **Critical data quality regression** exists, **breaking schema changes** lack migration plan, or **unresolved threshold violations** remain.
-
 ---
 
 ## 📝 Formatting Guidelines
 
 **Key Principles:**
 
-- Use emoji for visual hierarchy: 🔴 (critical), ⚠ (warning), ✅ (ok), 📊 (data), 🔍 (review), 🧭 (decision)
+- Use emoji for visual hierarchy: 🔴 (critical), ⚠ (warning), ✅ (ok), 📊 (data), 🔍 (Suggestion)
 - Bold important values: **-32.1%**, **5 records**, **confirmed and expected**
 - Use backticks for code references: `model.column_name`, `id1, id2, id3`
 - Separate sections with `---` horizontal rules
@@ -144,7 +144,8 @@ Provide actionable check references (format: `Check type: targets`):
 
 Before submitting your response, verify:
 
-- [ ] Main title is "# PR Validation Summary for draft"
+- [ ] Main title is "# PR Validation Summary [current_date]"
+- [ ] Add current date to title
 - [ ] All [REQUIRED] sections are included in order
 - [ ] Section titles match exactly (including emoji indicators)
 - [ ] Major sections separated with `---` horizontal rules
