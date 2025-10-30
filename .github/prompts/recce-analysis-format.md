@@ -144,7 +144,8 @@ Provide actionable check references (format: `Check type: targets`) based on val
 
 Before submitting your response, verify:
 
-- [ ] Main title is "# PR Validation Summary"
+- [ ] Main title is "# PR Validation Summary [current_date]"
+- [ ] Add current date to title
 - [ ] All [REQUIRED] sections are included in order
 - [ ] Section titles match exactly (including emoji indicators)
 - [ ] Major sections separated with `---` horizontal rules
@@ -153,4 +154,3 @@ Before submitting your response, verify:
 - [ ] Concrete values used instead of placeholders
 - [ ] Decision Guide provides clear merge/investigate/block guidance
 - [ ] Based on actual Recce MCP tool results, not assumptions
-- [ ] Add current date
