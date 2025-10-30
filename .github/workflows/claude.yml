@@ -161,7 +161,7 @@ jobs:
           
           # Install any missing common dependencies that might not be in setup.py
           echo "Installing additional common dependencies..."
-          pip install pytz tzdata
+          pip install pytz tzdata mcp
           
           # Verify installation
           if command -v recce >/dev/null 2>&1; then
