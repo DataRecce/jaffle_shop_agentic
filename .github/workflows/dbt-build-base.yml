@@ -1,0 +1,135 @@
+name: dbt Base Environment
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-base:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      # Default to DuckDB if DB_TYPE is not set
+      DB_TYPE: ${{ vars.DB_TYPE || 'duckdb' }}
+      DBT_BASE_TARGET: "prod"
+      # Snowflake credentials (only used if DB_TYPE == 'snowflake')
+      SNOWFLAKE_ACCOUNT: ${{ vars.DB_TYPE == 'snowflake' && secrets.SNOWFLAKE_ACCOUNT || '' }}
+      SNOWFLAKE_USER: ${{ vars.DB_TYPE == 'snowflake' && secrets.SNOWFLAKE_USER || '' }}
+      SNOWFLAKE_PASSWORD: ${{ vars.DB_TYPE == 'snowflake' && secrets.SNOWFLAKE_PASSWORD || '' }}
+      SNOWFLAKE_ROLE: ${{ vars.DB_TYPE == 'snowflake' && secrets.SNOWFLAKE_ROLE || 'RECCE' }}
+      SNOWFLAKE_SCHEMA: ${{ vars.DB_TYPE == 'snowflake' && 'PUBLIC' || '' }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+
+      - name: Cache Python dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pip
+            ~/.local/lib/python3.10/site-packages
+          key: pip-dbt-base-${{ runner.os }}-py3.10-${{ env.DB_TYPE }}-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            pip-dbt-base-${{ runner.os }}-py3.10-${{ env.DB_TYPE }}-
+            pip-dbt-base-${{ runner.os }}-py3.10-
+
+      - name: Cache dbt packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            dbt_packages/
+            ~/.dbt/
+          key: dbt-packages-${{ hashFiles('packages.yml') }}
+          restore-keys: |
+            dbt-packages-
+
+      - name: Install Python dependencies
+        run: |
+          pip install -r requirements.txt
+
+      - name: Install dbt packages
+        run: |
+          dbt deps
+
+      - name: Display database configuration
+        run: |
+          echo "::notice::Database Type: ${{ env.DB_TYPE }}"
+          echo "::notice::Target: ${{ env.DBT_BASE_TARGET }}"
+          if [ "${{ env.DB_TYPE }}" == "snowflake" ]; then
+            echo "::notice::Using Snowflake with schema: ${{ env.SNOWFLAKE_SCHEMA }}"
+          else
+            echo "::notice::Using DuckDB (default)"
+          fi
+
+      - name: Build dbt Base environment
+        id: build-base
+        run: |
+          echo "::group::Generating base environment artifacts"
+          echo "Branch: main"
+          echo "Target: ${{ env.DBT_BASE_TARGET }}"
+
+          # Generate base artifacts
+          dbt seed --target ${{ env.DBT_BASE_TARGET }}
+          dbt run --target ${{ env.DBT_BASE_TARGET }}
+          dbt docs generate --target ${{ env.DBT_BASE_TARGET }}
+
+          echo "::endgroup::"
+
+      - name: Validate artifacts
+        id: validate
+        run: |
+          if [ -f "target/manifest.json" ] && [ -f "target/catalog.json" ]; then
+            echo "✓ Base artifacts generated successfully"
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "::error::Base artifacts not found"
+            echo "exists=false" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+
+      - name: Upload base artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dbt-artifacts-base-main
+          path: target/
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Upload DuckDB database
+        if: env.DB_TYPE == 'duckdb'
+        uses: actions/upload-artifact@v4
+        with:
+          name: duckdb-base-main
+          path: jaffle_shop.duckdb
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## dbt Base Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch:** main" >> $GITHUB_STEP_SUMMARY
+          echo "**Database Type:** ${{ env.DB_TYPE }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Target:** ${{ env.DBT_BASE_TARGET }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ steps.validate.outputs.exists }}" == "true" ]; then
+            echo "✅ **Base artifacts:** Generated and uploaded as \`dbt-artifacts-base-main\`" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Retention:** 30 days" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Base artifacts:** Failed to generate" >> $GITHUB_STEP_SUMMARY
+          fi

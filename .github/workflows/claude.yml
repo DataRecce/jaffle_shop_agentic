@@ -1,14 +1,8 @@
-name: Claude Code
+name: Claude Code + Recce MCP
 
 on:
   issue_comment:
     types: [created]
-  pull_request_review_comment:
-    types: [created]
-  issues:
-    types: [opened, assigned]
-  pull_request_review:
-    types: [submitted]
 
 jobs:
   claude:
@@ -109,8 +103,8 @@ jobs:
       - name: Download Current Artifacts
         if: github.event.pull_request != null || github.event.issue.pull_request != null
         id: download-current
-        continue-on-error: true
-        uses: dawidd6/action-download-artifact@v6
+        continue-on-error: false
+        uses: dawidd6/action-download-artifact@v11
         with:
           name: dbt-artifacts-current-${{ steps.pr-info-artifacts.outputs.pr_number }}
           path: target/
@@ -123,14 +117,14 @@ jobs:
       - name: Download Base Artifacts
         if: github.event.pull_request != null || github.event.issue.pull_request != null
         id: download-base
-        continue-on-error: true
-        uses: dawidd6/action-download-artifact@v6
+        continue-on-error: false
+        uses: dawidd6/action-download-artifact@v11
         with:
-          name: dbt-artifacts-base-${{ steps.pr-info-artifacts.outputs.pr_number }}
+          name: dbt-artifacts-base-main
           path: target-base/
           github_token: ${{ github.token }}
-          workflow: dbt-build-artifacts.yml
-          pr: ${{ steps.pr-info-artifacts.outputs.pr_number }}
+          workflow: dbt-build-base.yml
+          branch: main
           check_artifacts: true
           search_artifacts: true
 
@@ -194,22 +188,24 @@ jobs:
         run: |
           echo "::group::Validating downloaded artifacts"
           
-          # Check current artifacts
+          # Check current artifacts (from dbt-build-artifacts.yml)
           if [ -f "target/manifest.json" ] && [ -f "target/catalog.json" ]; then
-            echo "✓ Current artifacts found"
+            echo "✓ Current artifacts found (from PR build)"
             echo "current_exists=true" >> $GITHUB_OUTPUT
           else
-            echo "::warning::Current artifacts not found. Recce features may be limited."
+            echo "::error::Current artifacts not found. Cannot proceed with Recce analysis."
             echo "current_exists=false" >> $GITHUB_OUTPUT
+            exit 1
           fi
 
-          # Check base artifacts
+          # Check base artifacts (from dbt-build-base.yml)
           if [ -f "target-base/manifest.json" ] && [ -f "target-base/catalog.json" ]; then
-            echo "✓ Base artifacts found"
+            echo "✓ Base artifacts found (from main branch build)"
             echo "base_exists=true" >> $GITHUB_OUTPUT
           else
-            echo "::warning::Base artifacts not found. Recce comparison features may be limited."
+            echo "::error::Base artifacts not found. Please ensure 'dbt Base Environment' workflow has run successfully."
             echo "base_exists=false" >> $GITHUB_OUTPUT
+            exit 1
           fi
           
           echo "::endgroup::"
