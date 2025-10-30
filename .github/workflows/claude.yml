@@ -90,15 +90,15 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
 
-      - name: Wait for dbt Build Workflow
-        if: github.event.pull_request != null || github.event.issue.pull_request != null
-        uses: lewagon/wait-on-check-action@v1.3.4
-        with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-          check-name: 'dbt-build'
-          repo-token: ${{ github.token }}
-          wait-interval: 10
-          allowed-conclusions: success,skipped,failure
+      # - name: Wait for dbt Build Workflow
+      #   if: github.event.pull_request != null || github.event.issue.pull_request != null
+      #   uses: lewagon/wait-on-check-action@v1.4.1
+      #   with:
+      #     ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      #     check-name: 'dbt-build'
+      #     repo-token: ${{ github.token }}
+      #     wait-interval: 10
+      #     allowed-conclusions: success,skipped,failure
 
       - name: Download Current Artifacts
         if: github.event.pull_request != null || github.event.issue.pull_request != null
