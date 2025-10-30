@@ -110,21 +110,29 @@ jobs:
         if: github.event.pull_request != null || github.event.issue.pull_request != null
         id: download-current
         continue-on-error: true
-        uses: actions/download-artifact@v4
+        uses: dawidd6/action-download-artifact@v6
         with:
           name: dbt-artifacts-current-${{ steps.pr-info-artifacts.outputs.pr_number }}
           path: target/
-          github-token: ${{ github.token }}
+          github_token: ${{ github.token }}
+          workflow: dbt-build-artifacts.yml
+          pr: ${{ steps.pr-info-artifacts.outputs.pr_number }}
+          check_artifacts: true
+          search_artifacts: true
 
       - name: Download Base Artifacts
         if: github.event.pull_request != null || github.event.issue.pull_request != null
         id: download-base
         continue-on-error: true
-        uses: actions/download-artifact@v4
+        uses: dawidd6/action-download-artifact@v6
         with:
           name: dbt-artifacts-base-${{ steps.pr-info-artifacts.outputs.pr_number }}
           path: target-base/
-          github-token: ${{ github.token }}
+          github_token: ${{ github.token }}
+          workflow: dbt-build-artifacts.yml
+          pr: ${{ steps.pr-info-artifacts.outputs.pr_number }}
+          check_artifacts: true
+          search_artifacts: true
 
       - name: Install Recce from source
         run: |
@@ -500,4 +508,4 @@ jobs:
             --mcp-config .github/mcp_config.json
             --max-turns 50
             --system-prompt-file ${{ steps.system-prompt.outputs.prompt_file }}
-            --allowedTools "Bash(recce),Bash(recce mcp-server),Bash(ls target/manifest.json),Bash(ls target-base/manifest.json),Bash(gh pr view:*),Bash(jq -r *),mcp__recce__get_lineage_diff,mcp__recce__row_count_diff,mcp__recce__query,mcp__recce__query_diff,mcp__recce__profile_diff"
+            --allowedTools "Read(recce.yml),Bash(recce),Bash(recce mcp-server),Bash(ls target/manifest.json),Bash(ls target-base/manifest.json),Bash(gh pr view:*),Bash(jq -r *),mcp__recce__get_lineage_diff,mcp__recce__row_count_diff,mcp__recce__query,mcp__recce__query_diff,mcp__recce__profile_diff"
