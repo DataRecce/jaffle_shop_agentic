@@ -82,6 +82,50 @@ jobs:
         run: |
           dbt deps
 
+      - name: Get PR information for artifacts
+        if: github.event.pull_request != null || github.event.issue.pull_request != null
+        id: pr-info-artifacts
+        run: |
+          if [ "${{ github.event_name }}" == "issue_comment" ]; then
+            PR_NUMBER=${{ github.event.issue.number }}
+          else
+            PR_NUMBER="${{ github.event.pull_request.number }}"
+          fi
+          echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
+          echo "::notice::PR Number: $PR_NUMBER"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Wait for dbt Build Workflow
+        if: github.event.pull_request != null || github.event.issue.pull_request != null
+        uses: lewagon/wait-on-check-action@v1.3.4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          check-name: 'dbt-build'
+          repo-token: ${{ github.token }}
+          wait-interval: 10
+          allowed-conclusions: success,skipped,failure
+
+      - name: Download Current Artifacts
+        if: github.event.pull_request != null || github.event.issue.pull_request != null
+        id: download-current
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: dbt-artifacts-current-${{ steps.pr-info-artifacts.outputs.pr_number }}
+          path: target/
+          github-token: ${{ github.token }}
+
+      - name: Download Base Artifacts
+        if: github.event.pull_request != null || github.event.issue.pull_request != null
+        id: download-base
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: dbt-artifacts-base-${{ steps.pr-info-artifacts.outputs.pr_number }}
+          path: target-base/
+          github-token: ${{ github.token }}
+
       - name: Install Recce from source
         run: |
           # Verify checkout directory exists and contains setup.py
@@ -136,150 +180,31 @@ jobs:
             exit 1
           }
 
-      - name: Get PR information
+      - name: Validate Artifacts
         if: github.event.pull_request != null || github.event.issue.pull_request != null
-        id: pr-info
+        id: validate-artifacts
         run: |
-          if [ "${{ github.event_name }}" == "issue_comment" ]; then
-            # For issue comments on PRs, fetch PR details
-            PR_NUMBER=${{ github.event.issue.number }}
-            PR_DATA=$(gh pr view $PR_NUMBER --json baseRefName,headRefName,headRefOid --repo ${{ github.repository }})
-            BASE_REF=$(echo $PR_DATA | jq -r '.baseRefName')
-            HEAD_SHA=$(echo $PR_DATA | jq -r '.headRefOid')
-            BASE_SHA=$(gh api repos/${{ github.repository }}/git/ref/heads/$BASE_REF --jq '.object.sha')
-
-            echo "base_ref=$BASE_REF" >> $GITHUB_OUTPUT
-            echo "base_sha=$BASE_SHA" >> $GITHUB_OUTPUT
-            echo "head_sha=$HEAD_SHA" >> $GITHUB_OUTPUT
-
-            # Debug output
-            echo "::notice::PR Base Branch: $BASE_REF (SHA: $BASE_SHA)"
-            echo "::notice::PR Head SHA: $HEAD_SHA"
-
-            # Clean working directory before checkout to avoid conflicts
-            echo "Cleaning working directory before checkout..."
-            git add -A
-            git stash push -m "Temporary stash before PR head checkout" || echo "Nothing to stash"
-
-            # Checkout PR head commit for issue comments
-            echo "Checking out PR head commit..."
-            git fetch origin $HEAD_SHA
-            git checkout $HEAD_SHA
-
-            # Restore stashed changes if any
-            if git stash list | grep -q "Temporary stash before PR head checkout"; then
-              git stash pop || echo "::warning::Could not restore stashed changes"
-            fi
+          echo "::group::Validating downloaded artifacts"
+          
+          # Check current artifacts
+          if [ -f "target/manifest.json" ] && [ -f "target/catalog.json" ]; then
+            echo "✓ Current artifacts found"
+            echo "current_exists=true" >> $GITHUB_OUTPUT
           else
-            # For PR events, use event data directly
-            BASE_REF="${{ github.event.pull_request.base.ref }}"
-            BASE_SHA="${{ github.event.pull_request.base.sha }}"
-            HEAD_SHA="${{ github.event.pull_request.head.sha }}"
-
-            echo "base_ref=$BASE_REF" >> $GITHUB_OUTPUT
-            echo "base_sha=$BASE_SHA" >> $GITHUB_OUTPUT
-            echo "head_sha=$HEAD_SHA" >> $GITHUB_OUTPUT
-
-            # Debug output
-            echo "::notice::PR Base Branch: $BASE_REF (SHA: $BASE_SHA)"
-            echo "::notice::PR Head SHA: $HEAD_SHA"
-          fi
-        env:
-          GH_TOKEN: ${{ github.token }}
-
-      - name: Prepare dbt Current environment
-        if: github.event.pull_request != null || github.event.issue.pull_request != null
-        id: prepare-current
-        continue-on-error: true
-        run: |
-          echo "::group::Generating current environment artifacts"
-          echo "Current branch/commit: ${{ steps.pr-info.outputs.head_sha }}"
-
-          # Generate current artifacts with error handling (already on PR head)
-          EXIT_CODE=0
-          dbt seed || { echo "::warning::dbt seed failed for current environment"; EXIT_CODE=1; }
-          dbt run || { echo "::warning::dbt run failed for current environment"; EXIT_CODE=1; }
-          dbt docs generate || { echo "::warning::dbt docs generate failed for current environment"; EXIT_CODE=1; }
-
-          # Set output to indicate success
-          echo "success=$([[ $EXIT_CODE -eq 0 ]] && echo 'true' || echo 'false')" >> $GITHUB_OUTPUT
-          echo "::endgroup::"
-
-      - name: Cache base target artifacts
-        if: github.event.pull_request != null || github.event.issue.pull_request != null
-        id: cache-base-target
-        uses: actions/cache@v4
-        with:
-          path: target-base/
-          key: dbt-base-${{ steps.pr-info.outputs.base_ref }}-${{ steps.pr-info.outputs.base_sha }}-${{ hashFiles('models/**/*.sql', 'seeds/**/*.csv', 'dbt_project.yml') }}
-          restore-keys: |
-            dbt-base-${{ steps.pr-info.outputs.base_ref }}-${{ steps.pr-info.outputs.base_sha }}-dbt-base-${{ steps.pr-info.outputs.base_ref }}-
-
-      - name: Prepare dbt Base environment
-        #if: (github.event.pull_request != null || github.event.issue.pull_request != null) && steps.cache-base-target.outputs.cache-hit != 'true'
-        if: (github.event.pull_request != null || github.event.issue.pull_request != null)
-        id: prepare-base
-        continue-on-error: true
-        run: |
-          echo "::group::Generating base environment artifacts"
-          echo "Base branch: ${{ steps.pr-info.outputs.base_ref }}"
-          echo "Base SHA: ${{ steps.pr-info.outputs.base_sha }}"
-
-          # Save PR-specific files that might not exist in base branch
-          mkdir -p /tmp/pr-files
-          if [ -f ".github/mcp_config.json" ]; then
-            cp .github/mcp_config.json /tmp/pr-files/
+            echo "::warning::Current artifacts not found. Recce features may be limited."
+            echo "current_exists=false" >> $GITHUB_OUTPUT
           fi
 
-          # Clean working directory before checkout to avoid conflicts with new files
-          # This prevents "untracked working tree files would be overwritten" errors
-          echo "Cleaning working directory..."
-          git add -A
-          git stash push -m "Temporary stash before base checkout" || echo "Nothing to stash"
-
-          # Checkout base branch to a detached HEAD
-          echo "Checking out base branch..."
-          git fetch origin ${{ steps.pr-info.outputs.base_ref }}
-          git checkout -q origin/${{ steps.pr-info.outputs.base_ref }}
-
-          # Generate base artifacts with error handling and capture exit codes
-          echo "Generating base artifacts..."
-          EXIT_CODE=0
-          dbt seed --target prod --target-path target-base || { echo "::warning::dbt seed failed for base environment"; EXIT_CODE=1; }
-          dbt run --target prod --target-path target-base || { echo "::warning::dbt run failed for base environment"; EXIT_CODE=1; }
-          dbt docs generate --target prod --target-path target-base || { echo "::warning::dbt docs generate failed for base environment"; EXIT_CODE=1; }
-
-          # Return to original branch/commit
-          echo "Returning to PR head..."
-          git checkout -q ${{ steps.pr-info.outputs.head_sha }}
-
-          # Restore stashed changes if any
-          if git stash list | grep -q "Temporary stash before base checkout"; then
-            git stash pop || echo "::warning::Could not restore stashed changes"
-          fi
-
-          # Restore PR-specific files
-          if [ -f "/tmp/pr-files/mcp_config.json" ]; then
-            mkdir -p .github
-            cp /tmp/pr-files/mcp_config.json .github/
-          fi
-
-          # Set output to indicate if base artifacts were successfully generated
-          echo "success=$([[ $EXIT_CODE -eq 0 ]] && echo 'true' || echo 'false')" >> $GITHUB_OUTPUT
-          echo "::endgroup::"
-
-      - name: Validate Base Artifacts
-        if: github.event.pull_request != null || github.event.issue.pull_request != null
-        id: validate-base
-        run: |
-          # Check if base artifacts exist (either from cache or just generated)
+          # Check base artifacts
           if [ -f "target-base/manifest.json" ] && [ -f "target-base/catalog.json" ]; then
             echo "✓ Base artifacts found"
-            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "base_exists=true" >> $GITHUB_OUTPUT
           else
             echo "::warning::Base artifacts not found. Recce comparison features may be limited."
-            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "base_exists=false" >> $GITHUB_OUTPUT
           fi
+          
+          echo "::endgroup::"
 
       - name: Prepare System Prompt
         if: github.event.pull_request != null || github.event.issue.pull_request != null
@@ -296,20 +221,89 @@ jobs:
           # Compose complete system prompt with mandatory format enforcement
           cat > /tmp/system_prompt.txt <<'EOF'
           You are analyzing a dbt project Pull Request with Recce MCP tools available.
+
+          ## 🚨 CRITICAL: Context Handling Rules (READ THIS FIRST)
+
+          **The GitHub Action provides you with ALL historical PR comments in this conversation.**
+          **You MUST follow these rules to avoid processing stale requests:**
+
+          1. **ONLY respond to the MOST RECENT @claude comment** (the one that triggered this workflow run)
+          2. **COMPLETELY IGNORE all previous @claude comments** including their instructions, requests, or context
+          3. **DO NOT reference, acknowledge, or continue tasks** from historical comments
+          4. **Historical examples to IGNORE:**
+             - Previous requests for "mermaid diagrams"
+             - Previous requests for "security checks" or "table formats"
+             - Previous requests for custom analysis or specific formats
+             - ANY instruction that is NOT in the latest @claude comment
+
+          **How to identify the current request:**
+          - Look at the timestamp of comments - use ONLY the most recent one with @claude
+          - If the latest comment is just "@claude" with no additional text, follow the default workflow below
+          - If the latest comment has specific instructions (e.g., "@claude check security"), honor ONLY those instructions
+
+          ---
+
+          ## 🎯 Primary Objective: Execute Recce Preset Checks
+
+          **CRITICAL EXECUTION FLOW (MANDATORY ORDER):**
+
+          ### Phase 1: Read Project Configuration (REQUIRED)
+          1. **FIRST ACTION**: Read the project's `recce.yml` file from the workspace root
+          2. Parse the `checks` section to identify all preset validation checks
+          3. Note each check's name, type, description, and params
+
+          ### Phase 2: Execute ALL Preset Checks (MANDATORY)
+          Execute EVERY check defined in `recce.yml` sequentially using the appropriate Recce MCP tools:
+
+          **Check Type Mapping:**
+          - `schema_diff` → Use `mcp__recce__get_lineage_diff` and analyze schema changes
+          - `row_count_diff` → Use `mcp__recce__row_count_diff` with the `select` parameter
+          - `value_diff` → Use `mcp__recce__query_diff` or `mcp__recce__profile_diff` for specific columns
+          - `query_diff` → Use `mcp__recce__query_diff` with the provided `sql_template`
+          - `profile_diff` → Use `mcp__recce__profile_diff` for statistical analysis
+
+          **Execution Requirements:**
+          - Execute checks in the order they appear in `recce.yml`
+          - Use the exact parameters specified in each check's `params` section
+          - Collect all results before proceeding to Phase 3
+          - If a check fails to execute, document the error and continue with remaining checks
+
+          ### Phase 3: Analyze Results and Determine Output Format
+
+          **Decision Logic:**
+          - **IF any check result shows anomalies** (threshold exceeded, unexpected changes, data quality issues):
+            → Output FULL PR Validation Summary using the format template below
+          - **IF all checks pass without anomalies**:
+            → Output brief success message: "✅ All Recce preset checks passed. No anomalies detected."
+
+          **Anomaly Detection Criteria:**
+          - Row count changes > 5% (or custom threshold in check definition)
+          - Schema changes (added/removed/modified columns)
+          - Profile metrics exceed specified thresholds
+          - Unexpected NULL values or data quality issues
+          - Query diff results show significant variance
+
+          ### Phase 4: Handle User's Additional Request (OPTIONAL)
+
+          **Processing the LATEST @claude comment:**
+          1. **COMPLETE Phases 1-3 FIRST** before addressing any user-specific requests
+          2. Check if the latest @claude comment contains additional instructions beyond just "@claude"
+          3. If yes, add a new section at the end: "## 📎 Additional Analysis (Per User Request)"
+          4. Address the specific request AFTER completing preset checks
+          5. If the user's request conflicts with preset checks or format requirements:
+             - Prioritize preset checks and format rules
+             - Explain the constraint politely in the response
+
+          **Important Notes:**
+          - You may use Mermaid diagrams to visualize lineage if YOU determine it's helpful OR if the latest comment requests it
+          - Do NOT create Mermaid diagrams just because a historical comment requested it
+          - Focus on what the CURRENT comment asks for, not historical requests
           
-          ## Analysis Workflow
-          
-          MANDATORY STEPS - Execute in this order:
-          1. Use mcp__recce__get_lineage_diff to understand model changes
-          2. Use mcp__recce__row_count_diff to check data volume changes  
-          3. Use mcp__recce__profile_diff for statistical analysis of key columns
-          4. Use mcp__recce__query_diff to validate data quality when applicable
-          
-          Prefer Recce MCP tools over manual queries for all dbt model comparisons and data validation.
+          ---
           
           ## Response Format Requirements
           
-          YOU MUST structure your PR analysis response using the EXACT format defined below.
+          **ONLY use this detailed format when anomalies are detected in Phase 3.**
           
           CRITICAL RULES (NON-NEGOTIABLE):
           1. Use "# PR Validation Summary" as the main title (H1 heading)
@@ -332,35 +326,81 @@ jobs:
           
           ---
           
-          ## Execution Notes
+          ## ⚙️ Execution Checklist
+
+          Before responding, verify you have:
+
+          - [ ] 🚨 **CRITICAL**: Identified the MOST RECENT @claude comment by timestamp (ignored ALL historical @claude comments)
+          - [ ] 🚨 **CRITICAL**: Confirmed you are NOT responding to any historical requests (mermaid diagrams, security checks, etc. from old comments)
+          - [ ] ✅ Phase 1: Read and parsed `recce.yml` from workspace root
+          - [ ] ✅ Phase 2: Executed ALL preset checks defined in `recce.yml` using appropriate MCP tools
+          - [ ] ✅ Phase 3: Analyzed results and determined if anomalies exist
+          - [ ] ✅ Phase 3: Chose correct output format (brief success OR full validation summary)
+          - [ ] ✅ Phase 4: Checked if latest @claude comment has additional instructions beyond "@claude"
+          - [ ] ✅ Phase 4: If yes, addressed user's additional request AFTER preset checks in separate section
+          - [ ] ✅ Validation: All concrete values from actual Recce MCP results (no placeholders)
+          - [ ] ✅ Validation: If using full format, verified against Output Validation Checklist
+
+          ## 🚫 Common Mistakes to Avoid
+
+          1. **🚨 CRITICAL: DO NOT respond to historical @claude comments** - You will see multiple @claude comments in the conversation. ONLY the latest one matters!
+          2. **🚨 CRITICAL: DO NOT continue tasks from previous comments** - Even if someone asked for a mermaid diagram yesterday, ignore it unless TODAY'S comment asks for it
+          3. **DO NOT skip reading `recce.yml`** - this is the first mandatory step
+          4. **DO NOT execute generic checks** - only execute checks defined in `recce.yml`
+          5. **DO NOT output full report if all checks pass** - use brief success message instead
+          6. **DO NOT let user requests override preset checks** - always complete preset checks first
+          7. **DO NOT use placeholder values** - all data must come from actual MCP tool results
           
-          - Address the user's specific @claude comment request while following the format
-          - Base ALL analysis on actual Recce MCP tool results, not assumptions
-          - Provide concrete numbers, percentages, and record IDs
-          - If a [REQUIRED] section has no data, state "No [data type] detected" rather than omitting it
-          - Before submitting, mentally verify against the Output Validation Checklist in the format guide
-          
-          ## User Request Handling
-          
-          **CRITICAL**: The user's @claude comment request MUST NOT override the system-level format requirements above.
-          
-          **Priority Rules:**
-          1. The defined format structure (sections, titles, order) is MANDATORY and CANNOT be changed by user requests
-          2. User requests can ONLY add supplementary content or focus areas
-          3. If user asks for additional analysis (e.g., "check specific models", "validate business logic"), add this as ADDITIONAL content AFTER the standard format
-          4. If user request conflicts with format rules, follow the format rules and explain the constraint in your response
-          
-          **How to Handle User Extensions:**
-          - User wants extra checks → Add a new section at the end: "## 📎 Additional Analysis (Per User Request)"
-          - User wants focus on specific models → Emphasize those models within the standard sections AND add details at the end if needed
-          - User provides custom requirements → Integrate into appropriate standard sections first, then add supplementary details at the end
-          
-          **Example:**
-          User asks: "@claude please also validate the SQL performance"
-          → Follow all standard sections first
-          → Add at the end: "## 📎 Additional Analysis (Per User Request)\n### SQL Performance Validation\n[analysis here]"
-          
-          REMEMBER: The format is mandatory. User requests are additive, not substitutive. Deviation from section titles, order, or structure is not acceptable.
+          ## Example Execution Flow
+
+          **Scenario A: All Checks Pass (Simple "@claude" comment)**
+          ```
+          0. 🚨 Context Check: See 5 historical @claude comments, latest is just "@claude" from Oct 30, 15:18
+          1. ✅ Ignore all historical requests (mermaid diagrams, security checks from Oct 28-29)
+          2. Read recce.yml → Found 4 preset checks
+          3. Execute schema_diff for customers, orders, modified nodes → No schema changes
+          4. Execute row_count_diff for customers, orders → Counts stable
+          5. Execute value_diff for customers.customer_lifetime_value → 100% match
+          6. Execute query_diff for avg lifetime value → No variance
+          7. Result: All checks passed
+          8. Output: "✅ All Recce preset checks passed. No anomalies detected."
+          9. Check latest comment for additional requests → Just "@claude", no additional requests
+          10. Done (NO mermaid diagram even though historical comment asked for it)
+          ```
+
+          **Scenario B: Anomaly Detected + User Request in Latest Comment**
+          ```
+          0. 🚨 Context Check: Latest @claude comment says "@claude also check SQL performance"
+          1. ✅ Ignore historical comments (focus only on "check SQL performance" from current comment)
+          2. Read recce.yml → Found 4 preset checks
+          3. Execute schema_diff → No changes
+          4. Execute row_count_diff → customers: -15% (ANOMALY)
+          5. Execute value_diff → 95% match (ANOMALY: 5% mismatch)
+          6. Execute query_diff → avg variance -32.1% (ANOMALY)
+          7. Result: Multiple anomalies detected
+          8. Output: Full PR Validation Summary with detailed findings
+          9. Latest comment has additional request "check SQL performance"
+          10. Add "## 📎 Additional Analysis (Per User Request)" section with SQL performance check
+          11. Done
+          ```
+
+          **Scenario C: Historical Mermaid Request (Should be IGNORED)**
+          ```
+          0. 🚨 Context Check: See comment from Oct 29 asking for mermaid diagram, but latest @claude is from Oct 30 with just "@claude"
+          1. ✅ Ignore the mermaid request from Oct 29 - it's historical!
+          2. Read recce.yml → Found 4 preset checks
+          3. Execute all preset checks...
+          4. Output: Based on Phase 3 decision (brief or full report)
+          5. Do NOT create mermaid diagram (unless YOU decide it's helpful for explaining anomalies)
+          6. Done
+          ```
+
+          REMEMBER:
+          - 🚨 **Context isolation is CRITICAL** - Always start by identifying the LATEST @claude comment
+          - 🚨 **Historical noise** - You WILL see old requests. Ignore them completely!
+          - recce.yml defines the checks → Execute them ALL → Analyze results → Choose output format → Handle CURRENT user request
+          - Preset checks are mandatory, current user requests are additive
+          - Use Mermaid if YOU think it helps OR if CURRENT comment asks for it
           EOF
           
           # Store prompt file path for next step
@@ -461,4 +501,3 @@ jobs:
             --max-turns 50
             --system-prompt-file ${{ steps.system-prompt.outputs.prompt_file }}
             --allowedTools "Bash(recce),Bash(recce mcp-server),Bash(ls target/manifest.json),Bash(ls target-base/manifest.json),Bash(gh pr view:*),Bash(jq -r *),mcp__recce__get_lineage_diff,mcp__recce__row_count_diff,mcp__recce__query,mcp__recce__query_diff,mcp__recce__profile_diff"
-
