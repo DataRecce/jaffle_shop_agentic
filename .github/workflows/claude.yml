@@ -114,7 +114,7 @@ jobs:
 
           # Install Recce Nightly with MCP extras
           echo "Installing recce-nightly[mcp]..."
-          pip install 'recce-nightly[mcp]'
+          pip install "git+https://github.com/DataRecce/recce.git@main#egg=recce[mcp]"
 
           # Verify installation
           if command -v recce >/dev/null 2>&1; then
