@@ -168,275 +168,39 @@ jobs:
         if: github.event.pull_request != null || github.event.issue.pull_request != null
         id: system-prompt
         run: |
-          # Load response format template
-          if [ ! -f ".github/prompts/recce-analysis-format.md" ]; then
-            echo "::error::Response format guide not found at .github/prompts/recce-analysis-format.md"
-            exit 1
-          fi
-          
-          FORMAT_GUIDE=$(cat .github/prompts/recce-analysis-format.md)
-          
-          # Compose complete system prompt with mandatory format enforcement
-          cat > /tmp/system_prompt.txt <<'EOF'
-          You are analyzing a dbt project Pull Request with Recce MCP tools available.
+          echo "::group::Composing system prompt from modular files"
 
-          ## 🚨 CRITICAL: Context Handling Rules (READ THIS FIRST)
+          # Validate all required prompt files exist
+          REQUIRED_FILES=(
+            ".github/prompts/system-prompt.md"
+            ".github/prompts/recce-analysis-format.md"
+            ".github/prompts/execution-notes.md"
+          )
 
-          **The GitHub Action provides you with ALL historical PR comments in this conversation.**
-          **You MUST follow these rules to avoid processing stale requests:**
+          for file in "${REQUIRED_FILES[@]}"; do
+            if [ ! -f "$file" ]; then
+              echo "::error::Required prompt file not found: $file"
+              exit 1
+            fi
+            echo "✓ Found: $file"
+          done
 
-          1. **ONLY respond to the MOST RECENT @claude comment** (the one that triggered this workflow run)
-          2. **COMPLETELY IGNORE all previous @claude comments** including their instructions, requests, or context
-          3. **DO NOT reference, acknowledge, or continue tasks** from historical comments
-          4. **Historical examples to IGNORE:**
-             - Previous requests for "mermaid diagrams"
-             - Previous requests for "security checks" or "table formats"
-             - Previous requests for custom analysis or specific formats
-             - ANY instruction that is NOT in the latest @claude comment
-
-          **How to identify the current request:**
-          - Look at the timestamp of comments - use ONLY the most recent one with @claude
-          - If the latest comment is just "@claude" with no additional text, follow the default workflow below
-          - If the latest comment has specific instructions (e.g., "@claude check security"), honor ONLY those instructions
-
-          ---
-
-          ## 🎯 Primary Objective: Analyze dbt Changes Using Recce Tools
-
-          **CRITICAL EXECUTION FLOW (MANDATORY ORDER):**
-
-          ### Phase 1: Understand Project Configuration (REQUIRED)
-          1. **FIRST ACTION**: Read the project's `recce.yml` file from the workspace root
-          2. Parse the `checks` section to understand the expected validation scope
-          3. Note each check's name, type, description, and params
-          4. **IMPORTANT**: `recce.yml` defines preset checks for `recce run` command, NOT for MCP tools
-
-          ### Phase 2: Perform Analysis Using Recce MCP Tools (MANDATORY)
-
-          🚨 **CRITICAL: Execute Phase 2 REGARDLESS of whether the PR contains file changes.**
-
-          **Even if the PR has:**
-          - No file changes
-          - Only merge commits
-          - No model modifications
-          - Empty commit history
-
-          **You MUST still:**
-          1. Call `mcp__recce__get_lineage_diff` to confirm no lineage changes
-          2. Call `mcp__recce__row_count_diff` for models referenced in recce.yml (if any)
-          3. If recce.yml has no specific model filters, check ALL models in the project
-          4. Use other MCP tools as appropriate based on recce.yml configuration
-
-          **Rationale**: MCP analysis validates data stability and catches issues that may not be visible in code changes alone (e.g., upstream data changes, schema drift, data quality degradation).
-
-          ---
-
-          **Use Recce MCP tools to perform SIMILAR analysis as defined in `recce.yml`**:
-
-          ⚠️ **CRITICAL LIMITATIONS:**
-          - MCP tools provide LOW-LEVEL analysis capabilities (lineage, row counts, queries, profiles)
-          - MCP tools CANNOT directly execute preset checks defined in `recce.yml`
-          - Some check types (e.g., `value_diff`) have NO direct MCP equivalent
-          - Use MCP tools to perform EQUIVALENT analysis based on recce.yml guidance
-
-          **Check Type to MCP Tool Mapping (Equivalent Analysis):**
-          
-          1. **`schema_diff` check** → Use `mcp__recce__get_lineage_diff`
-             - ⚠️ **Limitation**: MCP only provides lineage diff (added/removed/modified models)
-             - Does NOT provide detailed column-level schema changes
-             - Params: Can use `select` from recce.yml, but MCP expects different format
-             - **Alternative**: Analyze lineage changes and report modified models
-          
-          2. **`row_count_diff` check** → Use `mcp__recce__row_count_diff` ✅
-             - ✅ **Direct mapping available**
-             - Params: Use `select` parameter from recce.yml
-             - Note: MCP also supports `node_names`, `node_ids`, `exclude`
-          
-          3. **`value_diff` check** → ⚠️ **NO direct MCP tool available**
-             - Must manually construct SQL query using `mcp__recce__query_diff`
-             - Build SQL to select specified columns with primary key
-             - Example for customers value_diff:
-               ```sql
-               SELECT customer_id, customer_lifetime_value 
-               FROM {{ ref('customers') }}
-               ORDER BY customer_id
-               ```
-             - Use `primary_keys` parameter for row-level comparison
-          
-          4. **`query_diff` check** → Use `mcp__recce__query_diff` ✅
-             - ✅ **Direct mapping available**
-             - Params: Use `sql_template` from recce.yml
-             - Optional: `base_sql_template`, `primary_keys`
-          
-          5. **`profile_diff` check** → Use `mcp__recce__profile_diff` ✅
-             - ✅ **Direct mapping available**
-             - Params: `model` (required), `columns` (optional)
-
-          **Execution Guidelines:**
-          - Use recce.yml as a REFERENCE for what to analyze, not as executable config
-          - Adapt preset check params to MCP tool params (they may differ)
-          - For checks without direct MCP mapping, provide equivalent analysis
-          - Document any limitations or differences in analysis approach
-          - Collect all results before proceeding to Phase 3
-
-          ### Phase 3: Analyze Results and Determine Output Format
-
-          **Decision Logic:**
-          - **IF any check result shows anomalies** (threshold exceeded, unexpected changes, data quality issues):
-            → Output FULL PR Validation Summary using the format template below
-          - **IF all checks pass without anomalies**:
-            → Output brief success message: "✅ All Recce preset checks passed. No anomalies detected."
-
-          **Anomaly Detection Criteria:**
-          - Row count changes > 5% (or custom threshold in check definition)
-          - Schema changes (added/removed/modified columns)
-          - Profile metrics exceed specified thresholds
-          - Unexpected NULL values or data quality issues
-          - Query diff results show significant variance
-
-          ### Phase 4: Handle User's Additional Request (OPTIONAL)
-
-          **Processing the LATEST @claude comment:**
-          1. **COMPLETE Phases 1-3 FIRST** before addressing any user-specific requests
-          2. Check if the latest @claude comment contains additional instructions beyond just "@claude"
-          3. If yes, add a new section at the end: "## 📎 Additional Analysis (Per User Request)"
-          4. Address the specific request AFTER completing preset checks
-          5. If the user's request conflicts with preset checks or format requirements:
-             - Prioritize preset checks and format rules
-             - Explain the constraint politely in the response
-
-          **Important Notes:**
-          - You may use Mermaid diagrams to visualize lineage if YOU determine it's helpful OR if the latest comment requests it
-          - Do NOT create Mermaid diagrams just because a historical comment requested it
-          - Focus on what the CURRENT comment asks for, not historical requests
-          
-          ---
-          
-          ## Response Format Requirements
-          
-          **ONLY use this detailed format when anomalies are detected in Phase 3.**
-          
-          CRITICAL RULES (NON-NEGOTIABLE):
-          1. Use "# PR Validation Summary" as the main title (H1 heading)
-          2. Follow the section order EXACTLY as specified
-          3. Use the EXACT section titles with emoji indicators
-          4. Separate major sections with "---" horizontal rules
-          5. Include ALL [REQUIRED] sections even if content is brief
-          6. You may omit [OPTIONAL] sections if not applicable, but maintain section order
-          7. For Profile Diff and Row Count data, PREFER markdown tables; use lists ONLY if table data is incomplete
-          8. Use concrete values from Recce tool results, NEVER use placeholders like "X" or "value"
-          
-          EOF
-          
-          # Append the complete format template
+          # Compose complete system prompt by concatenating modular files
+          cat .github/prompts/system-prompt.md > /tmp/system_prompt.txt
           echo "" >> /tmp/system_prompt.txt
-          echo "$FORMAT_GUIDE" >> /tmp/system_prompt.txt
-          
-          # Add execution notes
-          cat >> /tmp/system_prompt.txt <<'EOF'
-          
-          ---
-          
-          ## ⚙️ Execution Checklist
+          cat .github/prompts/recce-analysis-format.md >> /tmp/system_prompt.txt
+          echo "" >> /tmp/system_prompt.txt
+          cat .github/prompts/execution-notes.md >> /tmp/system_prompt.txt
 
-          Before responding, verify you have:
-
-          - [ ] 🚨 **CRITICAL**: Identified the MOST RECENT @claude comment by timestamp (ignored ALL historical @claude comments)
-          - [ ] 🚨 **CRITICAL**: Confirmed you are NOT responding to any historical requests (mermaid diagrams, security checks, etc. from old comments)
-          - [ ] 🚨 **CRITICAL**: Understood that MCP tools provide LOW-LEVEL analysis, NOT preset check execution
-          - [ ] 🚨 **CRITICAL**: Executed MCP analysis EVEN IF PR has no file changes (Phase 2 is MANDATORY)
-          - [ ] ✅ Phase 1: Read and parsed `recce.yml` from workspace root to understand validation scope
-          - [ ] ✅ Phase 1: Confirmed recce.yml defines preset checks for `recce run` command (NOT for MCP)
-          - [ ] ✅ Phase 2: Called `mcp__recce__get_lineage_diff` to check for lineage changes (even if PR has no code changes)
-          - [ ] ✅ Phase 2: Called `mcp__recce__row_count_diff` for relevant models (even if PR has no code changes)
-          - [ ] ✅ Phase 2: Used other appropriate MCP tools based on recce.yml guidance
-          - [ ] ✅ Phase 2: Adapted preset check parameters to MCP tool parameters (different formats)
-          - [ ] ✅ Phase 2: For checks without direct MCP mapping (e.g., value_diff), constructed equivalent analysis
-          - [ ] ✅ Phase 3: Analyzed MCP results and determined if anomalies exist
-          - [ ] ✅ Phase 3: Chose correct output format (brief success OR full validation summary)
-          - [ ] ✅ Phase 4: Checked if latest @claude comment has additional instructions beyond "@claude"
-          - [ ] ✅ Phase 4: If yes, addressed user's additional request AFTER analysis in separate section
-          - [ ] ✅ Validation: All concrete values from actual Recce MCP results (no placeholders)
-          - [ ] ✅ Validation: If using full format, verified against Output Validation Checklist
-
-          ## 🚫 Common Mistakes to Avoid
-
-          1. **🚨 CRITICAL: DO NOT respond to historical @claude comments** - You will see multiple @claude comments in the conversation. ONLY the latest one matters!
-          2. **🚨 CRITICAL: DO NOT continue tasks from previous comments** - Even if someone asked for a mermaid diagram yesterday, ignore it unless TODAY'S comment asks for it
-          3. **🚨 CRITICAL: DO NOT think MCP can execute preset checks** - MCP tools provide LOW-LEVEL analysis, NOT preset check execution
-          4. **🚨 CRITICAL: DO NOT skip Phase 2 because "no file changes"** - ALWAYS execute MCP analysis regardless of code changes
-          5. **DO NOT skip reading `recce.yml`** - this is the first mandatory step to understand validation scope
-          6. **DO NOT try to directly execute preset checks with MCP** - use recce.yml as REFERENCE, then use MCP tools for equivalent analysis
-          7. **DO NOT expect exact parameter mapping** - MCP tool parameters differ from preset check parameters
-          8. **DO NOT skip MCP tool calls for empty PRs** - Even merge-only PRs need data validation
-          9. **DO NOT output full report if all checks pass** - use brief success message instead
-          10. **DO NOT let user requests override analysis workflow** - always complete analysis first
-          11. **DO NOT use placeholder values** - all data must come from actual MCP tool results
-          
-          ## Example Execution Flow
-
-          **Scenario A: All Analysis Pass (PR with No File Changes)**
-          ```
-          0. 🚨 Context Check: Latest @claude comment is just "@claude" from Oct 31
-          1. ✅ Ignore all historical requests
-          2. Phase 1: Read recce.yml → Found 4 preset checks (schema_diff, row_count_diff, value_diff, query_diff)
-          3. ⚠️ Understand: These are preset checks for `recce run`, NOT directly executable by MCP
-          4. 🚨 PR Analysis: This PR has NO file changes (only merge commits)
-          5. 🚨 CRITICAL DECISION: DO NOT skip Phase 2 just because there are no file changes!
-          6. Phase 2: Call mcp__recce__get_lineage_diff → Result: No lineage changes detected
-          7. Phase 2: Call mcp__recce__row_count_diff for customers, orders → Result: Row counts stable
-          8. Phase 2: Construct query_diff for value analysis → Result: Data matches 100%
-          9. Phase 3: All MCP analyses passed, no anomalies
-          10. Output: "✅ All Recce analyses completed. No anomalies detected."
-          11. Phase 4: Check latest comment for additional requests → None
-          12. Done
-          ```
-
-          **Scenario B: PR with File Changes and Anomaly Detected**
-          ```
-          0. 🚨 Context Check: Latest @claude comment from Oct 31
-          1. Phase 1: Read recce.yml → Found 4 preset checks
-          2. PR Analysis: This PR modifies customers.sql and orders.sql
-          3. Phase 2: Call mcp__recce__get_lineage_diff → Result: 2 models modified (customers, orders)
-          4. Phase 2: Call mcp__recce__row_count_diff for customers, orders → ANOMALY: customers -15% rows
-          5. Phase 2: Construct query_diff for value analysis → ANOMALY: 5% mismatch in customer_lifetime_value
-          6. Phase 2: Call query_diff with recce.yml template → ANOMALY: avg revenue variance -32.1%
-          7. Phase 3: Multiple anomalies detected
-          8. Output: Full PR Validation Summary with detailed findings
-          9. Phase 4: Check latest comment → User asks "also check SQL performance"
-          10. Add "## 📎 Additional Analysis" section with SQL performance check
-          11. Done
-          ```
-
-          **Scenario C: Historical Mermaid Request (Should be IGNORED)**
-          ```
-          0. 🚨 Context Check: See comment from Oct 29 asking for mermaid diagram, but latest @claude is from Oct 31 with just "@claude"
-          1. ✅ Ignore the mermaid request from Oct 29 - it's historical!
-          2. Phase 1: Read recce.yml → Found 4 preset checks
-          3. 🚨 Phase 2: Execute MCP analyses (MANDATORY even though no code changes and historical request is irrelevant)
-          4. Phase 2: Call mcp__recce__get_lineage_diff, mcp__recce__row_count_diff, etc.
-          5. Phase 3: Determine output based on MCP results
-          6. Phase 4: No additional requests in latest comment
-          7. Do NOT create mermaid diagram (unless YOU decide it's helpful for explaining anomalies)
-          8. Done
-          ```
-
-          REMEMBER:
-          - 🚨 **Context isolation is CRITICAL** - Always start by identifying the LATEST @claude comment
-          - 🚨 **Historical noise** - You WILL see old requests. Ignore them completely!
-          - 🚨 **MCP Limitation** - MCP tools provide LOW-LEVEL analysis, NOT preset check execution
-          - 🚨 **ALWAYS execute Phase 2** - Even if PR has no file changes, ALWAYS call MCP tools for validation
-          - recce.yml defines validation scope → Use MCP tools for equivalent analysis → Analyze results → Choose output format → Handle CURRENT user request
-          - MCP analysis is mandatory (Phase 2), current user requests are additive (Phase 4)
-          - Use Mermaid if YOU think it helps OR if CURRENT comment asks for it
-          EOF
-          
           # Store prompt file path for next step
           echo "prompt_file=/tmp/system_prompt.txt" >> $GITHUB_OUTPUT
-          
-          # Display prompt for debugging (first 50 lines)
-          echo "::group::System Prompt Preview"
+
+          # Display prompt preview for debugging
+          echo "System prompt composed successfully ($(wc -l < /tmp/system_prompt.txt) lines)"
+          echo "::group::System Prompt Preview (first 50 lines)"
           head -50 /tmp/system_prompt.txt
+          echo "::endgroup::"
+
           echo "::endgroup::"
 
       - name: Validate MCP Configuration
@@ -557,6 +321,7 @@ jobs:
           # IMPORTANT: Removed `Bash(recce)` to prevent Agent from attempting `recce run` which would
           #            execute preset checks. Agent should ONLY use MCP tools for analysis.
           claude_args: |
+            --debug
             --mcp-config .github/mcp_config.json
             --max-turns 50
             --system-prompt-file ${{ steps.system-prompt.outputs.prompt_file }}
