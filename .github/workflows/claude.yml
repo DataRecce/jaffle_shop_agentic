@@ -212,8 +212,27 @@ jobs:
           4. **IMPORTANT**: `recce.yml` defines preset checks for `recce run` command, NOT for MCP tools
 
           ### Phase 2: Perform Analysis Using Recce MCP Tools (MANDATORY)
+
+          🚨 **CRITICAL: Execute Phase 2 REGARDLESS of whether the PR contains file changes.**
+
+          **Even if the PR has:**
+          - No file changes
+          - Only merge commits
+          - No model modifications
+          - Empty commit history
+
+          **You MUST still:**
+          1. Call `mcp__recce__get_lineage_diff` to confirm no lineage changes
+          2. Call `mcp__recce__row_count_diff` for models referenced in recce.yml (if any)
+          3. If recce.yml has no specific model filters, check ALL models in the project
+          4. Use other MCP tools as appropriate based on recce.yml configuration
+
+          **Rationale**: MCP analysis validates data stability and catches issues that may not be visible in code changes alone (e.g., upstream data changes, schema drift, data quality degradation).
+
+          ---
+
           **Use Recce MCP tools to perform SIMILAR analysis as defined in `recce.yml`**:
-          
+
           ⚠️ **CRITICAL LIMITATIONS:**
           - MCP tools provide LOW-LEVEL analysis capabilities (lineage, row counts, queries, profiles)
           - MCP tools CANNOT directly execute preset checks defined in `recce.yml`
@@ -325,9 +344,12 @@ jobs:
           - [ ] 🚨 **CRITICAL**: Identified the MOST RECENT @claude comment by timestamp (ignored ALL historical @claude comments)
           - [ ] 🚨 **CRITICAL**: Confirmed you are NOT responding to any historical requests (mermaid diagrams, security checks, etc. from old comments)
           - [ ] 🚨 **CRITICAL**: Understood that MCP tools provide LOW-LEVEL analysis, NOT preset check execution
+          - [ ] 🚨 **CRITICAL**: Executed MCP analysis EVEN IF PR has no file changes (Phase 2 is MANDATORY)
           - [ ] ✅ Phase 1: Read and parsed `recce.yml` from workspace root to understand validation scope
           - [ ] ✅ Phase 1: Confirmed recce.yml defines preset checks for `recce run` command (NOT for MCP)
-          - [ ] ✅ Phase 2: Used appropriate MCP tools to perform EQUIVALENT analysis based on recce.yml guidance
+          - [ ] ✅ Phase 2: Called `mcp__recce__get_lineage_diff` to check for lineage changes (even if PR has no code changes)
+          - [ ] ✅ Phase 2: Called `mcp__recce__row_count_diff` for relevant models (even if PR has no code changes)
+          - [ ] ✅ Phase 2: Used other appropriate MCP tools based on recce.yml guidance
           - [ ] ✅ Phase 2: Adapted preset check parameters to MCP tool parameters (different formats)
           - [ ] ✅ Phase 2: For checks without direct MCP mapping (e.g., value_diff), constructed equivalent analysis
           - [ ] ✅ Phase 3: Analyzed MCP results and determined if anomalies exist
@@ -342,66 +364,70 @@ jobs:
           1. **🚨 CRITICAL: DO NOT respond to historical @claude comments** - You will see multiple @claude comments in the conversation. ONLY the latest one matters!
           2. **🚨 CRITICAL: DO NOT continue tasks from previous comments** - Even if someone asked for a mermaid diagram yesterday, ignore it unless TODAY'S comment asks for it
           3. **🚨 CRITICAL: DO NOT think MCP can execute preset checks** - MCP tools provide LOW-LEVEL analysis, NOT preset check execution
-          4. **DO NOT skip reading `recce.yml`** - this is the first mandatory step to understand validation scope
-          5. **DO NOT try to directly execute preset checks with MCP** - use recce.yml as REFERENCE, then use MCP tools for equivalent analysis
-          6. **DO NOT expect exact parameter mapping** - MCP tool parameters differ from preset check parameters
-          7. **DO NOT output full report if all checks pass** - use brief success message instead
-          8. **DO NOT let user requests override analysis workflow** - always complete analysis first
-          9. **DO NOT use placeholder values** - all data must come from actual MCP tool results
+          4. **🚨 CRITICAL: DO NOT skip Phase 2 because "no file changes"** - ALWAYS execute MCP analysis regardless of code changes
+          5. **DO NOT skip reading `recce.yml`** - this is the first mandatory step to understand validation scope
+          6. **DO NOT try to directly execute preset checks with MCP** - use recce.yml as REFERENCE, then use MCP tools for equivalent analysis
+          7. **DO NOT expect exact parameter mapping** - MCP tool parameters differ from preset check parameters
+          8. **DO NOT skip MCP tool calls for empty PRs** - Even merge-only PRs need data validation
+          9. **DO NOT output full report if all checks pass** - use brief success message instead
+          10. **DO NOT let user requests override analysis workflow** - always complete analysis first
+          11. **DO NOT use placeholder values** - all data must come from actual MCP tool results
           
           ## Example Execution Flow
 
-          **Scenario A: All Analysis Pass (Simple "@claude" comment)**
+          **Scenario A: All Analysis Pass (PR with No File Changes)**
           ```
-          0. 🚨 Context Check: See 5 historical @claude comments, latest is just "@claude" from Oct 30, 15:18
-          1. ✅ Ignore all historical requests (mermaid diagrams, security checks from Oct 28-29)
-          2. Read recce.yml → Found 4 preset checks (schema_diff, row_count_diff, value_diff, query_diff)
+          0. 🚨 Context Check: Latest @claude comment is just "@claude" from Oct 31
+          1. ✅ Ignore all historical requests
+          2. Phase 1: Read recce.yml → Found 4 preset checks (schema_diff, row_count_diff, value_diff, query_diff)
           3. ⚠️ Understand: These are preset checks for `recce run`, NOT directly executable by MCP
-          4. Use get_lineage_diff → No schema changes detected (equivalent to schema_diff check)
-          5. Use row_count_diff with select="customers orders state:modified" → Counts stable (direct mapping)
-          6. Construct query_diff SQL for value_diff check → SELECT customer_id, customer_lifetime_value FROM customers → 100% match
-          7. Use query_diff with sql_template from recce.yml → No variance (direct mapping)
-          8. Result: All equivalent analyses show no anomalies
-          9. Output: "✅ All Recce validation analyses passed. No anomalies detected."
-          10. Check latest comment for additional requests → Just "@claude", no additional requests
-          11. Done (NO mermaid diagram even though historical comment asked for it)
+          4. 🚨 PR Analysis: This PR has NO file changes (only merge commits)
+          5. 🚨 CRITICAL DECISION: DO NOT skip Phase 2 just because there are no file changes!
+          6. Phase 2: Call mcp__recce__get_lineage_diff → Result: No lineage changes detected
+          7. Phase 2: Call mcp__recce__row_count_diff for customers, orders → Result: Row counts stable
+          8. Phase 2: Construct query_diff for value analysis → Result: Data matches 100%
+          9. Phase 3: All MCP analyses passed, no anomalies
+          10. Output: "✅ All Recce analyses completed. No anomalies detected."
+          11. Phase 4: Check latest comment for additional requests → None
+          12. Done
           ```
 
-          **Scenario B: Anomaly Detected + User Request in Latest Comment**
+          **Scenario B: PR with File Changes and Anomaly Detected**
           ```
-          0. 🚨 Context Check: Latest @claude comment says "@claude also check SQL performance"
-          1. ✅ Ignore historical comments (focus only on "check SQL performance" from current comment)
-          2. Read recce.yml → Found 4 preset checks (schema_diff, row_count_diff, value_diff, query_diff)
-          3. ⚠️ Understand: Use MCP tools to perform equivalent analysis
-          4. Use get_lineage_diff → No lineage changes (schema_diff equivalent)
-          5. Use row_count_diff → customers: -15% (ANOMALY detected)
-          6. Construct query_diff for value_diff → 95% match (ANOMALY: 5% mismatch)
-          7. Use query_diff with sql_template → avg variance -32.1% (ANOMALY)
-          8. Result: Multiple anomalies detected in MCP analysis
-          9. Output: Full PR Validation Summary with detailed findings
-          10. Latest comment has additional request "check SQL performance"
-          11. Add "## 📎 Additional Analysis (Per User Request)" section with SQL performance check
-          12. Done
+          0. 🚨 Context Check: Latest @claude comment from Oct 31
+          1. Phase 1: Read recce.yml → Found 4 preset checks
+          2. PR Analysis: This PR modifies customers.sql and orders.sql
+          3. Phase 2: Call mcp__recce__get_lineage_diff → Result: 2 models modified (customers, orders)
+          4. Phase 2: Call mcp__recce__row_count_diff for customers, orders → ANOMALY: customers -15% rows
+          5. Phase 2: Construct query_diff for value analysis → ANOMALY: 5% mismatch in customer_lifetime_value
+          6. Phase 2: Call query_diff with recce.yml template → ANOMALY: avg revenue variance -32.1%
+          7. Phase 3: Multiple anomalies detected
+          8. Output: Full PR Validation Summary with detailed findings
+          9. Phase 4: Check latest comment → User asks "also check SQL performance"
+          10. Add "## 📎 Additional Analysis" section with SQL performance check
+          11. Done
           ```
 
           **Scenario C: Historical Mermaid Request (Should be IGNORED)**
           ```
-          0. 🚨 Context Check: See comment from Oct 29 asking for mermaid diagram, but latest @claude is from Oct 30 with just "@claude"
+          0. 🚨 Context Check: See comment from Oct 29 asking for mermaid diagram, but latest @claude is from Oct 31 with just "@claude"
           1. ✅ Ignore the mermaid request from Oct 29 - it's historical!
-          2. Read recce.yml → Found 4 preset checks (for `recce run` reference)
-          3. ⚠️ Use MCP tools to perform equivalent analysis (NOT direct execution of preset checks)
-          4. Use get_lineage_diff, row_count_diff, query_diff MCP tools...
-          5. Output: Based on Phase 3 decision (brief or full report)
-          6. Do NOT create mermaid diagram (unless YOU decide it's helpful for explaining anomalies)
-          7. Done
+          2. Phase 1: Read recce.yml → Found 4 preset checks
+          3. 🚨 Phase 2: Execute MCP analyses (MANDATORY even though no code changes and historical request is irrelevant)
+          4. Phase 2: Call mcp__recce__get_lineage_diff, mcp__recce__row_count_diff, etc.
+          5. Phase 3: Determine output based on MCP results
+          6. Phase 4: No additional requests in latest comment
+          7. Do NOT create mermaid diagram (unless YOU decide it's helpful for explaining anomalies)
+          8. Done
           ```
 
           REMEMBER:
           - 🚨 **Context isolation is CRITICAL** - Always start by identifying the LATEST @claude comment
           - 🚨 **Historical noise** - You WILL see old requests. Ignore them completely!
           - 🚨 **MCP Limitation** - MCP tools provide LOW-LEVEL analysis, NOT preset check execution
+          - 🚨 **ALWAYS execute Phase 2** - Even if PR has no file changes, ALWAYS call MCP tools for validation
           - recce.yml defines validation scope → Use MCP tools for equivalent analysis → Analyze results → Choose output format → Handle CURRENT user request
-          - Validation analysis is mandatory, current user requests are additive
+          - MCP analysis is mandatory (Phase 2), current user requests are additive (Phase 4)
           - Use Mermaid if YOU think it helps OR if CURRENT comment asks for it
           EOF
           
@@ -534,4 +560,4 @@ jobs:
             --mcp-config .github/mcp_config.json
             --max-turns 50
             --system-prompt-file ${{ steps.system-prompt.outputs.prompt_file }}
-            --allowedTools "Read(recce.yml),Bash(recce version),Bash(ls target/manifest.json),Bash(ls target-base/manifest.json),Bash(cat target/manifest.json),Bash(cat target-base/manifest.json),Bash(gh pr view:*),Bash(jq *),mcp__recce__get_lineage_diff,mcp__recce__row_count_diff,mcp__recce__query,mcp__recce__query_diff,mcp__recce__profile_diff"
+            --allowedTools "Read(recce.yml),Bash(recce version),Bash(recce mcp-server),Bash(ls target/manifest.json),Bash(ls target-base/manifest.json),Bash(cat target/manifest.json),Bash(cat target-base/manifest.json),Bash(gh pr view:*),Bash(jq *),mcp__recce__get_lineage_diff,mcp__recce__row_count_diff,mcp__recce__query,mcp__recce__query_diff,mcp__recce__profile_diff"
