@@ -26,19 +26,6 @@ jobs:
           # For PR events, checkout PR head; for issue_comment, will be updated in Get PR information step
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
-      - name: Checkout Recce Repository
-        uses: actions/checkout@v4
-        with:
-          repository: 'DataRecce/recce'
-          path: 'recce-repo'
-          # TODO: Update to stable release tag once available (e.g., v1.0.0)
-          # Currently using feature branch for MCP implementation
-          ref: 'feature/drc-1893-implement-the-mcp-server-in-recce'
-          # Shallow clone to minimize download time and storage
-          fetch-depth: 1
-          # Disable sparse-checkout for now to ensure all necessary files for pip install are available
-          # sparse-checkout and sparse-checkout-cone-mode can be enabled if we identify specific paths needed
-
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
@@ -52,11 +39,10 @@ jobs:
           path: |
             ~/.cache/pip
             ~/.local/lib/python3.10/site-packages
-          key: pip-recce-${{ runner.os }}-py3.10-${{ hashFiles('requirements.txt', 'recce-repo/setup.py', 'recce-repo/recce/VERSION') }}
+          key: pip-recce-nightly-${{ runner.os }}-py3.10-${{ hashFiles('requirements.txt') }}
           restore-keys: |
-            pip-recce-${{ runner.os }}-py3.10-${{ hashFiles('requirements.txt') }}-
-            pip-recce-${{ runner.os }}-py3.10-
-            pip-recce-
+            pip-recce-nightly-${{ runner.os }}-py3.10-
+            pip-recce-nightly-
 
       - name: Cache dbt packages
         uses: actions/cache@v4
@@ -90,16 +76,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
 
-      # - name: Wait for dbt Build Workflow
-      #   if: github.event.pull_request != null || github.event.issue.pull_request != null
-      #   uses: lewagon/wait-on-check-action@v1.4.1
-      #   with:
-      #     ref: ${{ github.event.pull_request.head.sha || github.sha }}
-      #     check-name: 'dbt-build'
-      #     repo-token: ${{ github.token }}
-      #     wait-interval: 10
-      #     allowed-conclusions: success,skipped,failure
-
       - name: Download Current Artifacts
         if: github.event.pull_request != null || github.event.issue.pull_request != null
         id: download-current
@@ -128,42 +104,18 @@ jobs:
           check_artifacts: true
           search_artifacts: true
 
-      - name: Install Recce from source
+      - name: Install Recce with MCP support
         run: |
-          # Verify checkout directory exists and contains setup.py
-          if [ ! -d "./recce-repo" ]; then
-            echo "::error::Recce repository not found at ./recce-repo"
-            exit 1
-          fi
-          
-          if [ ! -f "./recce-repo/setup.py" ]; then
-            echo "::error::setup.py not found in recce-repo. Checkout may be incomplete."
-            exit 1
-          fi
-          
-          # Verify VERSION file exists (required by setup.py)
-          if [ ! -f "./recce-repo/recce/VERSION" ]; then
-            echo "::error::VERSION file not found. Package data may be incomplete."
-            exit 1
-          fi
-          
+          echo "::group::Installing Recce Nightly with MCP support"
+
           # Upgrade pip, setuptools, and wheel to ensure proper dependency resolution
           echo "Upgrading pip, setuptools, and wheel..."
           pip install --upgrade pip setuptools wheel
-          
-          # Install packaging first (required by some dependencies)
-          echo "Installing base dependencies..."
-          pip install packaging
-          
-          # Install Recce with all dependencies
-          # Using -e for editable mode, with explicit dependency installation
-          echo "Installing Recce from source with all dependencies..."
-          pip install -e "./recce-repo[dev]"
-          
-          # Install any missing common dependencies that might not be in setup.py
-          echo "Installing additional common dependencies..."
-          pip install pytz tzdata
-          
+
+          # Install Recce Nightly with MCP extras
+          echo "Installing recce-nightly[mcp]..."
+          pip install 'recce-nightly[mcp]'
+
           # Verify installation
           if command -v recce >/dev/null 2>&1; then
             echo "✓ Recce installed successfully: $(which recce)"
@@ -172,15 +124,17 @@ jobs:
             echo "::error::Recce installation failed - command not found"
             exit 1
           fi
-          
+
           # Verify critical dependencies are installed
           echo "Verifying critical dependencies..."
-          python -c "import pytz; import mcp; import fastapi; import click; print('✓ All critical dependencies verified')" || {
+          python -c "import mcp; import fastapi; import click; print('✓ All critical dependencies verified')" || {
             echo "::error::Some critical dependencies are missing"
             echo "Installed packages:"
             pip list
             exit 1
           }
+
+          echo "::endgroup::"
 
       - name: Validate Artifacts
         if: github.event.pull_request != null || github.event.issue.pull_request != null
@@ -486,6 +440,25 @@ jobs:
 
           echo "✓ Recce MCP server started without parameter errors (PID: $MCP_PID)"
           kill "$MCP_PID"
+
+      - name: Clean working directory before Claude Code Action
+        if: github.event.pull_request != null || github.event.issue.pull_request != null
+        run: |
+          echo "::group::Cleaning working directory for Claude Code Action"
+          echo "Current branch: $(git branch --show-current)"
+          echo "Git status before cleaning:"
+          git status --short
+
+          # Claude Code Action will perform its own checkout internally
+          # We need to ensure no untracked files will conflict with that checkout
+          # Stash everything including untracked files
+          echo "Stashing all changes including untracked files..."
+          git add -A
+          git stash push -u -m "Temporary stash before Claude Code Action" || echo "Nothing to stash"
+
+          echo "Git status after cleaning:"
+          git status --short
+          echo "::endgroup::"
 
       - name: Run Claude Code with Recce MCP
         id: claude
