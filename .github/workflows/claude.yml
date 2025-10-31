@@ -311,24 +311,24 @@ jobs:
           echo "✓ Recce MCP server test completed successfully"
           echo "::endgroup::"
 
-      - name: Clean working directory before Claude Code Action
-        if: github.event.pull_request != null || github.event.issue.pull_request != null
-        run: |
-          echo "::group::Cleaning working directory for Claude Code Action"
-          echo "Current branch: $(git branch --show-current)"
-          echo "Git status before cleaning:"
-          git status --short
+      # - name: Clean working directory before Claude Code Action
+      #   if: github.event.pull_request != null || github.event.issue.pull_request != null
+      #   run: |
+      #     echo "::group::Cleaning working directory for Claude Code Action"
+      #     echo "Current branch: $(git branch --show-current)"
+      #     echo "Git status before cleaning:"
+      #     git status --short
 
-          # Claude Code Action will perform its own checkout internally
-          # We need to ensure no untracked files will conflict with that checkout
-          # Stash everything including untracked files
-          echo "Stashing all changes including untracked files..."
-          git add -A
-          git stash push -u -m "Temporary stash before Claude Code Action" || echo "Nothing to stash"
+      #     # Claude Code Action will perform its own checkout internally
+      #     # We need to ensure no untracked files will conflict with that checkout
+      #     # Stash everything including untracked files
+      #     echo "Stashing all changes including untracked files..."
+      #     git add -A
+      #     git stash push -u -m "Temporary stash before Claude Code Action" || echo "Nothing to stash"
 
-          echo "Git status after cleaning:"
-          git status --short
-          echo "::endgroup::"
+      #     echo "Git status after cleaning:"
+      #     git status --short
+      #     echo "::endgroup::"
 
       - name: Run Claude Code with Recce MCP
         id: claude
@@ -362,3 +362,4 @@ jobs:
             --max-turns 50
             --system-prompt-file ${{ steps.system-prompt.outputs.prompt_file }}
             --allowedTools "Read(recce.yml),Bash(recce),Bash(recce mcp-server),Bash(ls target/manifest.json),Bash(ls target-base/manifest.json),Bash(cat target/manifest.json),Bash(cat target-base/manifest.json),Bash(gh pr view:*),Bash(jq *),mcp__recce__get_lineage_diff,mcp__recce__row_count_diff,mcp__recce__query,mcp__recce__query_diff,mcp__recce__profile_diff"
+            --debug
