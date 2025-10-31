@@ -5,6 +5,17 @@ When analyzing a dbt Pull Request, you MUST structure your response with the fol
 **CRITICAL**: Sections marked with [REQUIRED] MUST be included. Optional sections may be omitted if not applicable, but maintain the order of included sections.
 
 ---
+## [REQUIRED] Compared environment
+|  | Manifest	 | Catalog | 
+| Production |	YYYY-MM-DD HH:SS:MM	| YYYY-MM-DD HH:SS:MM | 
+| This PR | 	YYYY-MM-DD HH:SS:MM | 	YYYY-MM-DD HH:SS:MM | 
+
+>> **Note** compare the time between these 2 environments and provide status, 🔴 if date diff >= 1 day, ⚠  if date diff < 1 day and > 4 hours,  ✅ if date diff <= 4 hours
+- 🔴 the date diff is **X** hours, please check your data
+- ⚠ the date diff is  **X** hours, be aware of the potential issue
+- ✅ the data diff is  **X** mintues
+
+---
 
 ## [REQUIRED] ⚠ Anomalies Detected
 
@@ -18,33 +29,14 @@ Use emoji indicators for severity:
 If no critical issues, state: "✅ No critical anomalies detected"
 
 ---
+## [REQUIRED] Changed Overview
 
-## [REQUIRED] Changes Overview
+Lineage Diff
+>> **Note** generate mermaid graph from left to right to display the lineage diff with impact radius, highlight the transformation type of impact columns. If the models are more then 20, show the lineage focus on the model that have most changes
 
 - Models: **X modified**, **Y new**, **Z removed**
 - Direct Changes (columns): **N total** — **X modified**, **Y added**, **Z removed**
 - Indirect Impact: **N downstream columns** across **M models**
-
-> **Note**: If Modified Columns or Affected Models are less then 10, use below format: 
-
-### Modified Columns
-
-- `model.column_name` → description of change
-- `model.column_name` → description of change
-
-### Downstream Impact
-
-- `model.column_name` → dependency explanation
-- `model.column_name` → dependency explanation
-
-### Affected Models
-
-- Modified: `model1`, `model2`, `model3`
-- New: `new_model`
-- Removed: `removed_model` (if any)
-- Downstream: `downstream_model1`, `downstream_model2`
-
-> **Note**: If Modified Columns or Affected Models are more then 10, use below format: 
 
 ### Top Columns Changes (by downsteam impact)
 - `model.column_name` → description of change
@@ -52,22 +44,29 @@ If no critical issues, state: "✅ No critical anomalies detected"
 - `model.column_name` → description of change
 - [X more columns] [link to lineage diff](#link to Recce Cloud)
 
+
 ---
+## [REQUIRED] ✅ Checks Summary
 
-## [REQUIRED] ✅ Test Status
+> **Note**: Read recce.yml to get what to test, the status can be like below exmaples. Show action links that users can click to lauch the check in Recce for each check
 
-> **Note**: Read recce.yml to get what to test, the status can be: 
+**Preset check results:**
+- ✅ Schema validation: **N columns added/modified/removed** [See in Recce](link to launch this check in Recce)
+- ✅ Row count validation: **all stable** / specific changes noted [See in Recce](link to launch this check in Recce)
+- ⚠ Profile threshold exceeded: **>X% change in [metric]** [See in Recce](link to launch this check in Recce)
+  
+> **Note**: Based on your understanding, call out the highest risk that users should check as suggsted checks with reason briefly. If you can do the checks with MCP, then provide the result. If not, still write the suggested validation.Show action links that users can click to lauch the check in Recce for each check
+**Suggested checks:**
+- ✅ Profile diff in `model.column_name` and the result is no change. [See in Recce](link to launch this check in Recce)
+- ⚠  Row counts diff in `model.column_name` and see **>X% change in [metric]** [See in Recce](link to launch this check in Recce)
+- ❌ Critical failures: (if any) [See in Recce](link to launch this check in Recce)
 
-- ✅ Schema validation: **N columns added/modified/removed**
-- ✅ Row count validation: **all stable** / specific changes noted
-- ⚠ Profile threshold exceeded: **>X% change in [metric]**
-- ⚠ NULL value increase: **N records**
-- ❌ Critical failures: (if any)
+**[Lauch Recce](link to launch this PR in Recce)**
 
 ---
 
 ## [OPTIONAL] 📊 Validation Results
-**OTIONAL**: Show the diff section only when the test status are ⚠  or ❌. Skip the section if it's ✅.
+> **Note**: Show the diff section based oon the result from preset check results and suggested checks result. Show the restuls when they are ⚠  or ❌. Skip the section if it's ✅.
 
 
 ### Schema Diff
@@ -116,17 +115,6 @@ Use `mcp__recce__row_count_diff` results (prefer table format):
 
 > **Note**: Fill with actual Diff results. Only provide this table when significant anomalies are detected.
 
-
----
-
-## [REQUIRED] 🔍 Suggested Checks
-
-> **Note**: Provide actionable check references (format: `Check type: targets`) and suggest validation, the checks in Recce and link to launch to the check. The suggested checks can be: 
-
-- Investigate drivers of [specific metric] **±X%**; confirm the [change description] is intentional. Link to profile diff in `model.column_name`
-- Verify if the **N newly NULL/changed** records are expected (data quality or model logic issue?). Link to value diff in `model.column_name`
-- Validate whether downstream [affected models/columns] show unreasonable changes. Like to query diff in `downstream_model.column_name`
-- Confirm business logic changes align with requirements.Link to XX diff in `model.column_name`
 
 ---
 
