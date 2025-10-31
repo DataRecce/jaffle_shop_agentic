@@ -201,30 +201,64 @@ jobs:
 
           ---
 
-          ## 🎯 Primary Objective: Execute Recce Preset Checks
+          ## 🎯 Primary Objective: Analyze dbt Changes Using Recce Tools
 
           **CRITICAL EXECUTION FLOW (MANDATORY ORDER):**
 
-          ### Phase 1: Read Project Configuration (REQUIRED)
+          ### Phase 1: Understand Project Configuration (REQUIRED)
           1. **FIRST ACTION**: Read the project's `recce.yml` file from the workspace root
-          2. Parse the `checks` section to identify all preset validation checks
+          2. Parse the `checks` section to understand the expected validation scope
           3. Note each check's name, type, description, and params
+          4. **IMPORTANT**: `recce.yml` defines preset checks for `recce run` command, NOT for MCP tools
 
-          ### Phase 2: Execute ALL Preset Checks (MANDATORY)
-          Execute EVERY check defined in `recce.yml` sequentially using the appropriate Recce MCP tools:
+          ### Phase 2: Perform Analysis Using Recce MCP Tools (MANDATORY)
+          **Use Recce MCP tools to perform SIMILAR analysis as defined in `recce.yml`**:
+          
+          ⚠️ **CRITICAL LIMITATIONS:**
+          - MCP tools provide LOW-LEVEL analysis capabilities (lineage, row counts, queries, profiles)
+          - MCP tools CANNOT directly execute preset checks defined in `recce.yml`
+          - Some check types (e.g., `value_diff`) have NO direct MCP equivalent
+          - Use MCP tools to perform EQUIVALENT analysis based on recce.yml guidance
 
-          **Check Type Mapping:**
-          - `schema_diff` → Use `mcp__recce__get_lineage_diff` and analyze schema changes
-          - `row_count_diff` → Use `mcp__recce__row_count_diff` with the `select` parameter
-          - `value_diff` → Use `mcp__recce__query_diff` or `mcp__recce__profile_diff` for specific columns
-          - `query_diff` → Use `mcp__recce__query_diff` with the provided `sql_template`
-          - `profile_diff` → Use `mcp__recce__profile_diff` for statistical analysis
+          **Check Type to MCP Tool Mapping (Equivalent Analysis):**
+          
+          1. **`schema_diff` check** → Use `mcp__recce__get_lineage_diff`
+             - ⚠️ **Limitation**: MCP only provides lineage diff (added/removed/modified models)
+             - Does NOT provide detailed column-level schema changes
+             - Params: Can use `select` from recce.yml, but MCP expects different format
+             - **Alternative**: Analyze lineage changes and report modified models
+          
+          2. **`row_count_diff` check** → Use `mcp__recce__row_count_diff` ✅
+             - ✅ **Direct mapping available**
+             - Params: Use `select` parameter from recce.yml
+             - Note: MCP also supports `node_names`, `node_ids`, `exclude`
+          
+          3. **`value_diff` check** → ⚠️ **NO direct MCP tool available**
+             - Must manually construct SQL query using `mcp__recce__query_diff`
+             - Build SQL to select specified columns with primary key
+             - Example for customers value_diff:
+               ```sql
+               SELECT customer_id, customer_lifetime_value 
+               FROM {{ ref('customers') }}
+               ORDER BY customer_id
+               ```
+             - Use `primary_keys` parameter for row-level comparison
+          
+          4. **`query_diff` check** → Use `mcp__recce__query_diff` ✅
+             - ✅ **Direct mapping available**
+             - Params: Use `sql_template` from recce.yml
+             - Optional: `base_sql_template`, `primary_keys`
+          
+          5. **`profile_diff` check** → Use `mcp__recce__profile_diff` ✅
+             - ✅ **Direct mapping available**
+             - Params: `model` (required), `columns` (optional)
 
-          **Execution Requirements:**
-          - Execute checks in the order they appear in `recce.yml`
-          - Use the exact parameters specified in each check's `params` section
+          **Execution Guidelines:**
+          - Use recce.yml as a REFERENCE for what to analyze, not as executable config
+          - Adapt preset check params to MCP tool params (they may differ)
+          - For checks without direct MCP mapping, provide equivalent analysis
+          - Document any limitations or differences in analysis approach
           - Collect all results before proceeding to Phase 3
-          - If a check fails to execute, document the error and continue with remaining checks
 
           ### Phase 3: Analyze Results and Determine Output Format
 
@@ -290,12 +324,16 @@ jobs:
 
           - [ ] 🚨 **CRITICAL**: Identified the MOST RECENT @claude comment by timestamp (ignored ALL historical @claude comments)
           - [ ] 🚨 **CRITICAL**: Confirmed you are NOT responding to any historical requests (mermaid diagrams, security checks, etc. from old comments)
-          - [ ] ✅ Phase 1: Read and parsed `recce.yml` from workspace root
-          - [ ] ✅ Phase 2: Executed ALL preset checks defined in `recce.yml` using appropriate MCP tools
-          - [ ] ✅ Phase 3: Analyzed results and determined if anomalies exist
+          - [ ] 🚨 **CRITICAL**: Understood that MCP tools provide LOW-LEVEL analysis, NOT preset check execution
+          - [ ] ✅ Phase 1: Read and parsed `recce.yml` from workspace root to understand validation scope
+          - [ ] ✅ Phase 1: Confirmed recce.yml defines preset checks for `recce run` command (NOT for MCP)
+          - [ ] ✅ Phase 2: Used appropriate MCP tools to perform EQUIVALENT analysis based on recce.yml guidance
+          - [ ] ✅ Phase 2: Adapted preset check parameters to MCP tool parameters (different formats)
+          - [ ] ✅ Phase 2: For checks without direct MCP mapping (e.g., value_diff), constructed equivalent analysis
+          - [ ] ✅ Phase 3: Analyzed MCP results and determined if anomalies exist
           - [ ] ✅ Phase 3: Chose correct output format (brief success OR full validation summary)
           - [ ] ✅ Phase 4: Checked if latest @claude comment has additional instructions beyond "@claude"
-          - [ ] ✅ Phase 4: If yes, addressed user's additional request AFTER preset checks in separate section
+          - [ ] ✅ Phase 4: If yes, addressed user's additional request AFTER analysis in separate section
           - [ ] ✅ Validation: All concrete values from actual Recce MCP results (no placeholders)
           - [ ] ✅ Validation: If using full format, verified against Output Validation Checklist
 
@@ -303,61 +341,67 @@ jobs:
 
           1. **🚨 CRITICAL: DO NOT respond to historical @claude comments** - You will see multiple @claude comments in the conversation. ONLY the latest one matters!
           2. **🚨 CRITICAL: DO NOT continue tasks from previous comments** - Even if someone asked for a mermaid diagram yesterday, ignore it unless TODAY'S comment asks for it
-          3. **DO NOT skip reading `recce.yml`** - this is the first mandatory step
-          4. **DO NOT execute generic checks** - only execute checks defined in `recce.yml`
-          5. **DO NOT output full report if all checks pass** - use brief success message instead
-          6. **DO NOT let user requests override preset checks** - always complete preset checks first
-          7. **DO NOT use placeholder values** - all data must come from actual MCP tool results
+          3. **🚨 CRITICAL: DO NOT think MCP can execute preset checks** - MCP tools provide LOW-LEVEL analysis, NOT preset check execution
+          4. **DO NOT skip reading `recce.yml`** - this is the first mandatory step to understand validation scope
+          5. **DO NOT try to directly execute preset checks with MCP** - use recce.yml as REFERENCE, then use MCP tools for equivalent analysis
+          6. **DO NOT expect exact parameter mapping** - MCP tool parameters differ from preset check parameters
+          7. **DO NOT output full report if all checks pass** - use brief success message instead
+          8. **DO NOT let user requests override analysis workflow** - always complete analysis first
+          9. **DO NOT use placeholder values** - all data must come from actual MCP tool results
           
           ## Example Execution Flow
 
-          **Scenario A: All Checks Pass (Simple "@claude" comment)**
+          **Scenario A: All Analysis Pass (Simple "@claude" comment)**
           ```
           0. 🚨 Context Check: See 5 historical @claude comments, latest is just "@claude" from Oct 30, 15:18
           1. ✅ Ignore all historical requests (mermaid diagrams, security checks from Oct 28-29)
-          2. Read recce.yml → Found 4 preset checks
-          3. Execute schema_diff for customers, orders, modified nodes → No schema changes
-          4. Execute row_count_diff for customers, orders → Counts stable
-          5. Execute value_diff for customers.customer_lifetime_value → 100% match
-          6. Execute query_diff for avg lifetime value → No variance
-          7. Result: All checks passed
-          8. Output: "✅ All Recce preset checks passed. No anomalies detected."
-          9. Check latest comment for additional requests → Just "@claude", no additional requests
-          10. Done (NO mermaid diagram even though historical comment asked for it)
+          2. Read recce.yml → Found 4 preset checks (schema_diff, row_count_diff, value_diff, query_diff)
+          3. ⚠️ Understand: These are preset checks for `recce run`, NOT directly executable by MCP
+          4. Use get_lineage_diff → No schema changes detected (equivalent to schema_diff check)
+          5. Use row_count_diff with select="customers orders state:modified" → Counts stable (direct mapping)
+          6. Construct query_diff SQL for value_diff check → SELECT customer_id, customer_lifetime_value FROM customers → 100% match
+          7. Use query_diff with sql_template from recce.yml → No variance (direct mapping)
+          8. Result: All equivalent analyses show no anomalies
+          9. Output: "✅ All Recce validation analyses passed. No anomalies detected."
+          10. Check latest comment for additional requests → Just "@claude", no additional requests
+          11. Done (NO mermaid diagram even though historical comment asked for it)
           ```
 
           **Scenario B: Anomaly Detected + User Request in Latest Comment**
           ```
           0. 🚨 Context Check: Latest @claude comment says "@claude also check SQL performance"
           1. ✅ Ignore historical comments (focus only on "check SQL performance" from current comment)
-          2. Read recce.yml → Found 4 preset checks
-          3. Execute schema_diff → No changes
-          4. Execute row_count_diff → customers: -15% (ANOMALY)
-          5. Execute value_diff → 95% match (ANOMALY: 5% mismatch)
-          6. Execute query_diff → avg variance -32.1% (ANOMALY)
-          7. Result: Multiple anomalies detected
-          8. Output: Full PR Validation Summary with detailed findings
-          9. Latest comment has additional request "check SQL performance"
-          10. Add "## 📎 Additional Analysis (Per User Request)" section with SQL performance check
-          11. Done
+          2. Read recce.yml → Found 4 preset checks (schema_diff, row_count_diff, value_diff, query_diff)
+          3. ⚠️ Understand: Use MCP tools to perform equivalent analysis
+          4. Use get_lineage_diff → No lineage changes (schema_diff equivalent)
+          5. Use row_count_diff → customers: -15% (ANOMALY detected)
+          6. Construct query_diff for value_diff → 95% match (ANOMALY: 5% mismatch)
+          7. Use query_diff with sql_template → avg variance -32.1% (ANOMALY)
+          8. Result: Multiple anomalies detected in MCP analysis
+          9. Output: Full PR Validation Summary with detailed findings
+          10. Latest comment has additional request "check SQL performance"
+          11. Add "## 📎 Additional Analysis (Per User Request)" section with SQL performance check
+          12. Done
           ```
 
           **Scenario C: Historical Mermaid Request (Should be IGNORED)**
           ```
           0. 🚨 Context Check: See comment from Oct 29 asking for mermaid diagram, but latest @claude is from Oct 30 with just "@claude"
           1. ✅ Ignore the mermaid request from Oct 29 - it's historical!
-          2. Read recce.yml → Found 4 preset checks
-          3. Execute all preset checks...
-          4. Output: Based on Phase 3 decision (brief or full report)
-          5. Do NOT create mermaid diagram (unless YOU decide it's helpful for explaining anomalies)
-          6. Done
+          2. Read recce.yml → Found 4 preset checks (for `recce run` reference)
+          3. ⚠️ Use MCP tools to perform equivalent analysis (NOT direct execution of preset checks)
+          4. Use get_lineage_diff, row_count_diff, query_diff MCP tools...
+          5. Output: Based on Phase 3 decision (brief or full report)
+          6. Do NOT create mermaid diagram (unless YOU decide it's helpful for explaining anomalies)
+          7. Done
           ```
 
           REMEMBER:
           - 🚨 **Context isolation is CRITICAL** - Always start by identifying the LATEST @claude comment
           - 🚨 **Historical noise** - You WILL see old requests. Ignore them completely!
-          - recce.yml defines the checks → Execute them ALL → Analyze results → Choose output format → Handle CURRENT user request
-          - Preset checks are mandatory, current user requests are additive
+          - 🚨 **MCP Limitation** - MCP tools provide LOW-LEVEL analysis, NOT preset check execution
+          - recce.yml defines validation scope → Use MCP tools for equivalent analysis → Analyze results → Choose output format → Handle CURRENT user request
+          - Validation analysis is mandatory, current user requests are additive
           - Use Mermaid if YOU think it helps OR if CURRENT comment asks for it
           EOF
           
@@ -471,7 +515,17 @@ jobs:
             actions: read
 
           # Configure Recce MCP tools via claude_args
-          # Available tools: get_lineage_diff, row_count_diff, query, query_diff, profile_diff
+          # Available MCP tools (5 total):
+          # 1. get_lineage_diff: Get lineage diff (added/removed/modified models)
+          #    - Params: select, exclude, packages
+          # 2. row_count_diff: Compare row counts between base and current
+          #    - Params: node_names, node_ids, select, exclude
+          # 3. query: Execute SQL query on specified environment (supports Jinja templates)
+          #    - Params: sql_template, base (boolean, default: false)
+          # 4. query_diff: Compare SQL query results between base and current
+          #    - Params: sql_template, base_sql_template, primary_keys
+          # 5. profile_diff: Compare statistical profiles (min/max/avg/distinct count)
+          #    - Params: model, columns
           # Note: Recce tools are only available when running in PR context with artifacts
           claude_args: |
             --mcp-config .github/mcp_config.json
