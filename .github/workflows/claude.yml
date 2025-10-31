@@ -58,10 +58,6 @@ jobs:
         run: |
           pip install -r requirements.txt
 
-      - name: Install dbt packages
-        run: |
-          dbt deps
-
       - name: Get PR information for artifacts
         if: github.event.pull_request != null || github.event.issue.pull_request != null
         id: pr-info-artifacts
@@ -310,9 +306,6 @@ jobs:
           
           echo "✓ Recce MCP server test completed successfully"
           echo "::endgroup::"
-
-      - name: Clean untracked files
-        run: git clean -fdx
 
       - name: Run Claude Code with Recce MCP
         id: claude
