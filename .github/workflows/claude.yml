@@ -311,24 +311,8 @@ jobs:
           echo "✓ Recce MCP server test completed successfully"
           echo "::endgroup::"
 
-      # - name: Clean working directory before Claude Code Action
-      #   if: github.event.pull_request != null || github.event.issue.pull_request != null
-      #   run: |
-      #     echo "::group::Cleaning working directory for Claude Code Action"
-      #     echo "Current branch: $(git branch --show-current)"
-      #     echo "Git status before cleaning:"
-      #     git status --short
-
-      #     # Claude Code Action will perform its own checkout internally
-      #     # We need to ensure no untracked files will conflict with that checkout
-      #     # Stash everything including untracked files
-      #     echo "Stashing all changes including untracked files..."
-      #     git add -A
-      #     git stash push -u -m "Temporary stash before Claude Code Action" || echo "Nothing to stash"
-
-      #     echo "Git status after cleaning:"
-      #     git status --short
-      #     echo "::endgroup::"
+      - name: Clean untracked files
+        run: git clean -fdx
 
       - name: Run Claude Code with Recce MCP
         id: claude
