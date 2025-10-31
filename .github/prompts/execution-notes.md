@@ -2,9 +2,15 @@
 
 ## ⚙️ Execution Checklist
 
-Before responding, verify you have:
+**⚠️ STEP 0 (MANDATORY BEFORE ALL OTHER STEPS):**
 
-- [ ] 🚨 **CRITICAL**: Identified the MOST RECENT @claude comment by timestamp (ignored ALL historical @claude comments)
+- [ ] 🚨 **STEP 0a**: Scanned ALL comments in the conversation for @claude mentions
+- [ ] 🚨 **STEP 0b**: Found the MOST RECENT @claude comment by comparing timestamps (YYYY-MM-DDTHH:MM:SSZ format)
+- [ ] 🚨 **STEP 0c**: Confirmed this is THE ONLY comment I will respond to (all others are historical noise)
+- [ ] 🚨 **STEP 0d**: Verified I will NOT reference, acknowledge, or continue ANY task from previous @claude comments
+
+**After completing Step 0, verify you have:**
+
 - [ ] 🚨 **CRITICAL**: Confirmed you are NOT responding to any historical requests (mermaid diagrams, security checks, etc. from old comments)
 - [ ] 🚨 **CRITICAL**: Will ONLY use MCP tools (`mcp__recce__*`), NOT Recce CLI commands like `recce run`
 - [ ] 🚨 **CRITICAL**: Understood that MCP tools provide LOW-LEVEL analysis, NOT preset check execution
@@ -84,6 +90,52 @@ Before responding, verify you have:
 6. Phase 4: No additional requests in latest comment
 7. Do NOT create mermaid diagram (unless YOU decide it's helpful for explaining anomalies)
 8. Done
+```
+
+**Scenario D: ❌ WRONG - Responding to Historical Comment (ANTI-PATTERN)**
+```
+❌ INCORRECT BEHAVIOR:
+0. See multiple @claude comments:
+   - Oct 29 08:00: "@claude create a mermaid diagram"
+   - Oct 30 10:00: "@claude check security issues"
+   - Oct 31 09:00: "@claude"
+1. ❌ WRONG: "I see you want a mermaid diagram and security check, let me do both"
+2. ❌ WRONG: Agent creates mermaid diagram (responding to Oct 29 comment)
+3. ❌ WRONG: Agent performs security check (responding to Oct 30 comment)
+4. ❌ WRONG: Skips Recce MCP analysis
+5. ❌ RESULT: Completely wrong output, user confused
+
+✅ CORRECT BEHAVIOR:
+0. 🚨 STEP 0: Scan all comments and identify latest = Oct 31 09:00 "@claude"
+1. ✅ CORRECT: Latest comment is just "@claude" with no additional instructions
+2. ✅ CORRECT: Ignore Oct 29 mermaid request (historical)
+3. ✅ CORRECT: Ignore Oct 30 security request (historical)
+4. Phase 1: Read recce.yml
+5. Phase 2: Execute MCP analyses (default workflow)
+6. Phase 3: Output validation summary
+7. Phase 4: No additional requests in latest comment
+8. Done - correct behavior
+```
+
+**Scenario E: Multiple @claude Mentions - Find the Latest**
+```
+0. 🚨 STEP 0: Scan comments for ALL @claude mentions:
+   - [user1 at 2025-10-29T08:00:00Z]: "@claude analyze customers"
+   - [user2 at 2025-10-30T14:30:00Z]: "@claude check row counts only"
+   - [claude at 2025-10-30T14:35:00Z]: "Analysis complete..." (this is bot response, IGNORE)
+   - [user1 at 2025-10-31T10:00:00Z]: "@claude"
+
+1. 🚨 STEP 0: Compare timestamps:
+   - 2025-10-31T10:00:00Z is the most recent
+
+2. ✅ Latest human @claude comment: Oct 31 10:00 "@claude" (no additional instructions)
+
+3. ❌ Ignore Oct 29 "analyze customers" request
+4. ❌ Ignore Oct 30 "check row counts only" request
+5. ❌ Ignore Oct 30 claude[bot] response (not a user request)
+
+6. ✅ Execute default workflow (Phase 1-4)
+7. Done
 ```
 
 REMEMBER:
