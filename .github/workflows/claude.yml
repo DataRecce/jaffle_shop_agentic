@@ -526,9 +526,12 @@ jobs:
           #    - Params: sql_template, base_sql_template, primary_keys
           # 5. profile_diff: Compare statistical profiles (min/max/avg/distinct count)
           #    - Params: model, columns
-          # Note: Recce tools are only available when running in PR context with artifacts
+          # 
+          # Note: Recce MCP tools are only available when running in PR context with artifacts
+          # IMPORTANT: Removed `Bash(recce)` to prevent Agent from attempting `recce run` which would
+          #            execute preset checks. Agent should ONLY use MCP tools for analysis.
           claude_args: |
             --mcp-config .github/mcp_config.json
             --max-turns 50
             --system-prompt-file ${{ steps.system-prompt.outputs.prompt_file }}
-            --allowedTools "Read(recce.yml),Bash(recce),Bash(recce mcp-server),Bash(ls target/manifest.json),Bash(ls target-base/manifest.json),Bash(gh pr view:*),Bash(jq -r *),mcp__recce__get_lineage_diff,mcp__recce__row_count_diff,mcp__recce__query,mcp__recce__query_diff,mcp__recce__profile_diff"
+            --allowedTools "Read(recce.yml),Bash(recce version),Bash(ls target/manifest.json),Bash(ls target-base/manifest.json),Bash(cat target/manifest.json),Bash(cat target-base/manifest.json),Bash(gh pr view:*),Bash(jq *),mcp__recce__get_lineage_diff,mcp__recce__row_count_diff,mcp__recce__query,mcp__recce__query_diff,mcp__recce__profile_diff"
