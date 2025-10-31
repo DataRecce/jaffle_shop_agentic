@@ -166,10 +166,11 @@ jobs:
         run: |
           echo "::group::Composing system prompt from modular files"
 
-          # Validate all required prompt files exist
+          # Validate required prompt files exist
           REQUIRED_FILES=(
             ".github/prompts/system-prompt.md"
-            ".github/prompts/recce-analysis-format.md"
+            ".github/prompts/default-summary.md"
+            ".github/prompts/one-summary.md"
             ".github/prompts/execution-notes.md"
           )
 
@@ -181,15 +182,27 @@ jobs:
             echo "✓ Found: $file"
           done
 
+          # Detect which response template to use based on comment content
+          COMMENT_BODY="${{ github.event.comment.body }}"
+          
+          if echo "$COMMENT_BODY" | grep -q "/one-summary"; then
+            RESPONSE_TEMPLATE=".github/prompts/one-summary.md"
+            echo "📋 Response template: one-summary.md (compact format)"
+          else
+            RESPONSE_TEMPLATE=".github/prompts/default-summary.md"
+            echo "📋 Response template: default-summary.md (default format)"
+          fi
+
           # Compose complete system prompt by concatenating modular files
           cat .github/prompts/system-prompt.md > /tmp/system_prompt.txt
           echo "" >> /tmp/system_prompt.txt
-          cat .github/prompts/recce-analysis-format.md >> /tmp/system_prompt.txt
+          cat "$RESPONSE_TEMPLATE" >> /tmp/system_prompt.txt
           echo "" >> /tmp/system_prompt.txt
           cat .github/prompts/execution-notes.md >> /tmp/system_prompt.txt
 
           # Store prompt file path for next step
           echo "prompt_file=/tmp/system_prompt.txt" >> $GITHUB_OUTPUT
+          echo "template_used=$(basename $RESPONSE_TEMPLATE)" >> $GITHUB_OUTPUT
 
           # Display prompt preview for debugging
           echo "System prompt composed successfully ($(wc -l < /tmp/system_prompt.txt) lines)"
@@ -318,6 +331,12 @@ jobs:
             actions: read
 
           # Configure Recce MCP tools via claude_args
+          # 
+          # Response Template Selection:
+          # - Default: Uses default-summary.md (comprehensive analysis format)
+          # - /one-summary command: Uses one-summary.md (compact single-page format)
+          # Template is automatically selected based on comment content in "Prepare System Prompt" step
+          #
           # Available MCP tools (5 total):
           # 1. get_lineage_diff: Get lineage diff (added/removed/modified models)
           #    - Params: select, exclude, packages
