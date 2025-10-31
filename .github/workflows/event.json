@@ -1,0 +1,18 @@
+{
+  "action": "opened",
+  "issue": {
+    "number": 123,
+    "title": "本地測試：含 @claude 的內容",
+    "body": "嗨 @claude，請協助檢視這個議題的描述與重現步驟。",
+    "user": { "login": "iamcxa" },
+    "state": "open",
+    "labels": []
+  },
+  "repository": {
+    "id": 1,
+    "name": "repo",
+    "full_name": "owner/repo",
+    "owner": { "login": "owner" }
+  },
+  "sender": { "login": "iamcxa" }
+}
