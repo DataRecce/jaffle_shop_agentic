@@ -31,17 +31,17 @@ jobs:
         with:
           # Python 3.10 is used for compatibility with Recce and dbt-core
           # Recce requires Python 3.9+ per its setup.py
-          python-version: '3.10'
+          python-version: '3.12'
 
       - name: Cache Python dependencies
         uses: actions/cache@v4
         with:
           path: |
             ~/.cache/pip
-            ~/.local/lib/python3.10/site-packages
-          key: pip-recce-nightly-${{ runner.os }}-py3.10-${{ hashFiles('requirements.txt') }}
+            ~/.local/lib/python3.12/site-packages
+          key: pip-recce-nightly-${{ runner.os }}-py3.12-${{ hashFiles('requirements.txt') }}
           restore-keys: |
-            pip-recce-nightly-${{ runner.os }}-py3.10-
+            pip-recce-nightly-${{ runner.os }}-py3.12-
             pip-recce-nightly-
 
       - name: Cache dbt packages
@@ -58,10 +58,6 @@ jobs:
         run: |
           pip install -r requirements.txt
 
-      - name: Install dbt packages
-        run: |
-          dbt deps
-
       - name: Get PR information for artifacts
         if: github.event.pull_request != null || github.event.issue.pull_request != null
         id: pr-info-artifacts
@@ -77,7 +73,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
 
       - name: Download Current Artifacts
-        if: github.event.pull_request != null || github.event.issue.pull_request != null
+        if: |
+          (github.event.pull_request != null || github.event.issue.pull_request != null) &&
+          (contains(github.event.comment.body, '/ms2') || contains(github.event.comment.body, '/ms3') || contains(github.event.comment.body, '/one-summary'))
         id: download-current
         continue-on-error: false
         uses: dawidd6/action-download-artifact@v11
@@ -85,13 +83,15 @@ jobs:
           name: dbt-artifacts-current-${{ steps.pr-info-artifacts.outputs.pr_number }}
           path: target/
           github_token: ${{ github.token }}
-          workflow: dbt-build-artifacts.yml
+          workflow: dbt-build-pr.yml
           pr: ${{ steps.pr-info-artifacts.outputs.pr_number }}
           check_artifacts: true
           search_artifacts: true
 
       - name: Download Base Artifacts
-        if: github.event.pull_request != null || github.event.issue.pull_request != null
+        if: |
+          (github.event.pull_request != null || github.event.issue.pull_request != null) &&
+          (contains(github.event.comment.body, '/ms2') || contains(github.event.comment.body, '/ms3') || contains(github.event.comment.body, '/one-summary'))
         id: download-base
         continue-on-error: false
         uses: dawidd6/action-download-artifact@v11
@@ -105,6 +105,7 @@ jobs:
           search_artifacts: true
 
       - name: Install Recce with MCP support
+        if: contains(github.event.comment.body, '/ms2') || contains(github.event.comment.body, '/ms3') || contains(github.event.comment.body, '/one-summary')
         run: |
           echo "::group::Installing Recce Nightly with MCP support"
 
@@ -137,7 +138,9 @@ jobs:
           echo "::endgroup::"
 
       - name: Validate Artifacts
-        if: github.event.pull_request != null || github.event.issue.pull_request != null
+        if: |
+          (github.event.pull_request != null || github.event.issue.pull_request != null) &&
+          (contains(github.event.comment.body, '/ms2') || contains(github.event.comment.body, '/ms3') || contains(github.event.comment.body, '/one-summary'))
         id: validate-artifacts
         run: |
           echo "::group::Validating downloaded artifacts"
@@ -168,15 +171,53 @@ jobs:
         if: github.event.pull_request != null || github.event.issue.pull_request != null
         id: system-prompt
         run: |
-          echo "::group::Composing system prompt from modular files"
-
-          # Validate all required prompt files exist
+          echo "::group::Composing system prompt based on milestone"
+          
+          COMMENT_BODY="${{ github.event.comment.body }}"
+          
+          # Store comment body for system prompt (will be injected into prompt to provide context)
+          # Note: We don't use the 'prompt' parameter to preserve Claude action's default MCP and PR comment behavior
+          echo "comment_body=$COMMENT_BODY" >> $GITHUB_OUTPUT
+          
+          # Detect milestone command
+          if echo "$COMMENT_BODY" | grep -q "/ms1"; then
+            MILESTONE="ms1"
+            SYSTEM_PROMPT_FILE=".github/prompts/ms1-system-prompt.md"
+            RESPONSE_TEMPLATE=".github/prompts/ms1-response-format.md"
+            echo "📋 Milestone: MS1 (PR/Git only)"
+          elif echo "$COMMENT_BODY" | grep -q "/ms2"; then
+            MILESTONE="ms2"
+            SYSTEM_PROMPT_FILE=".github/prompts/ms2-system-prompt.md"
+            RESPONSE_TEMPLATE=".github/prompts/ms2-response-format.md"
+            echo "📋 Milestone: MS2 (+ dbt metadata)"
+          elif echo "$COMMENT_BODY" | grep -q "/ms3"; then
+            MILESTONE="ms3"
+            SYSTEM_PROMPT_FILE=".github/prompts/ms3-system-prompt.md"
+            RESPONSE_TEMPLATE=".github/prompts/ms3-response-format.md"
+            echo "📋 Milestone: MS3 (+ data diffs)"
+          elif echo "$COMMENT_BODY" | grep -q "/one-summary"; then
+            # Backward compatibility: /one-summary uses MS3 with compact format
+            MILESTONE="ms3"
+            SYSTEM_PROMPT_FILE=".github/prompts/ms3-system-prompt.md"
+            RESPONSE_TEMPLATE=".github/prompts/one-summary.md"
+            echo "📋 Milestone: MS3 (one-summary format)"
+          else
+            # Default: no system prompt, general PR review
+            echo "📋 Default: General PR review (no system prompt)"
+            echo "milestone=default" >> $GITHUB_OUTPUT
+            echo "has_system_prompt=false" >> $GITHUB_OUTPUT
+            echo "::endgroup::"
+            exit 0
+          fi
+          
+          # Validate required prompt files exist
           REQUIRED_FILES=(
-            ".github/prompts/system-prompt.md"
-            ".github/prompts/recce-analysis-format.md"
+            ".github/prompts/system-prompt-base.md"
+            "$SYSTEM_PROMPT_FILE"
+            "$RESPONSE_TEMPLATE"
             ".github/prompts/execution-notes.md"
           )
-
+          
           for file in "${REQUIRED_FILES[@]}"; do
             if [ ! -f "$file" ]; then
               echo "::error::Required prompt file not found: $file"
@@ -184,27 +225,52 @@ jobs:
             fi
             echo "✓ Found: $file"
           done
-
-          # Compose complete system prompt by concatenating modular files
-          cat .github/prompts/system-prompt.md > /tmp/system_prompt.txt
+          
+          # Compose system prompt for MS1/MS2/MS3
+          # Inject current comment context at the beginning
+          echo "## Current User Request" > /tmp/system_prompt.txt
           echo "" >> /tmp/system_prompt.txt
-          cat .github/prompts/recce-analysis-format.md >> /tmp/system_prompt.txt
+          echo "The user mentioned @claude with the following comment:" >> /tmp/system_prompt.txt
+          echo '```' >> /tmp/system_prompt.txt
+          echo "$COMMENT_BODY" >> /tmp/system_prompt.txt
+          echo '```' >> /tmp/system_prompt.txt
           echo "" >> /tmp/system_prompt.txt
+          echo "**IMPORTANT**: Focus ONLY on this current comment. Ignore any previous @claude mentions or historical discussions in the PR thread." >> /tmp/system_prompt.txt
+          echo "" >> /tmp/system_prompt.txt
+          echo "---" >> /tmp/system_prompt.txt
+          echo "" >> /tmp/system_prompt.txt
+          
+          # Add base system prompt
+          cat .github/prompts/system-prompt-base.md >> /tmp/system_prompt.txt
+          echo "" >> /tmp/system_prompt.txt
+          
+          # Add milestone-specific prompt
+          cat "$SYSTEM_PROMPT_FILE" >> /tmp/system_prompt.txt
+          echo "" >> /tmp/system_prompt.txt
+          
+          # Add response format
+          cat "$RESPONSE_TEMPLATE" >> /tmp/system_prompt.txt
+          echo "" >> /tmp/system_prompt.txt
+          
+          # Add execution notes
           cat .github/prompts/execution-notes.md >> /tmp/system_prompt.txt
-
-          # Store prompt file path for next step
+          
+          echo "milestone=$MILESTONE" >> $GITHUB_OUTPUT
+          echo "has_system_prompt=true" >> $GITHUB_OUTPUT
           echo "prompt_file=/tmp/system_prompt.txt" >> $GITHUB_OUTPUT
-
+          
           # Display prompt preview for debugging
           echo "System prompt composed successfully ($(wc -l < /tmp/system_prompt.txt) lines)"
           echo "::group::System Prompt Preview (first 50 lines)"
           head -50 /tmp/system_prompt.txt
           echo "::endgroup::"
-
+          
           echo "::endgroup::"
 
       - name: Validate MCP Configuration
-        if: github.event.pull_request != null || github.event.issue.pull_request != null
+        if: |
+          (github.event.pull_request != null || github.event.issue.pull_request != null) &&
+          (contains(github.event.comment.body, '/ms2') || contains(github.event.comment.body, '/ms3') || contains(github.event.comment.body, '/one-summary'))
         run: |
           # Show current working directory and files for debugging
           echo "Current directory: $(pwd)"
@@ -243,7 +309,9 @@ jobs:
           fi
 
       - name: Test Recce MCP Server
-        if: github.event.pull_request != null || github.event.issue.pull_request != null
+        if: |
+          (github.event.pull_request != null || github.event.issue.pull_request != null) &&
+          (contains(github.event.comment.body, '/ms2') || contains(github.event.comment.body, '/ms3') || contains(github.event.comment.body, '/one-summary'))
         run: |
           echo "::group::Testing Recce MCP server startup"
           
@@ -311,54 +379,40 @@ jobs:
           echo "✓ Recce MCP server test completed successfully"
           echo "::endgroup::"
 
-      - name: Clean working directory before Claude Code Action
-        if: github.event.pull_request != null || github.event.issue.pull_request != null
-        run: |
-          echo "::group::Cleaning working directory for Claude Code Action"
-          echo "Current branch: $(git branch --show-current)"
-          echo "Git status before cleaning:"
-          git status --short
-
-          # Claude Code Action will perform its own checkout internally
-          # We need to ensure no untracked files will conflict with that checkout
-          # Stash everything including untracked files
-          echo "Stashing all changes including untracked files..."
-          git add -A
-          git stash push -u -m "Temporary stash before Claude Code Action" || echo "Nothing to stash"
-
-          echo "Git status after cleaning:"
-          git status --short
-          echo "::endgroup::"
-
       - name: Run Claude Code with Recce MCP
         id: claude
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # NOTE: We do NOT set 'prompt' parameter here to preserve Claude action's default behavior
+          # The comment context is injected into system prompt instead
 
           # This is an optional setting that allows Claude to read CI results on PRs
           additional_permissions: |
             actions: read
 
           # Configure Recce MCP tools via claude_args
-          # Available MCP tools (5 total):
-          # 1. get_lineage_diff: Get lineage diff (added/removed/modified models)
-          #    - Params: select, exclude, packages
-          # 2. row_count_diff: Compare row counts between base and current
-          #    - Params: node_names, node_ids, select, exclude
-          # 3. query: Execute SQL query on specified environment (supports Jinja templates)
-          #    - Params: sql_template, base (boolean, default: false)
-          # 4. query_diff: Compare SQL query results between base and current
-          #    - Params: sql_template, base_sql_template, primary_keys
-          # 5. profile_diff: Compare statistical profiles (min/max/avg/distinct count)
-          #    - Params: model, columns
           # 
-          # Note: Recce MCP tools are only available when running in PR context with artifacts
-          # IMPORTANT: `Bash(recce)` is allowed for MCP server initialization and internal checks,
-          #            but system prompt strictly prohibits Claude from using `recce run` CLI.
-          #            Agent should ONLY use MCP tools for analysis, NOT CLI commands.
+          # Milestone-Based Tool Access:
+          # - Default (@claude): General PR review, uses Claude action's default behavior (no custom args)
+          # - MS1 (/ms1): Git/PR context only - GitHub CLI, Git commands
+          # - MS2 (/ms2): + dbt metadata - lineage_diff MCP tool only
+          # - MS3 (/ms3): + data diffs - all Recce MCP tools
+          # - /one-summary: MS3 with compact format
+          #
+          # Available MCP tools (5 total for MS3):
+          # 1. get_lineage_diff: Get lineage diff (added/removed/modified models)
+          # 2. row_count_diff: Compare row counts between base and current
+          # 3. query: Execute SQL query on specified environment (supports Jinja templates)
+          # 4. query_diff: Compare SQL query results between base and current
+          # 5. profile_diff: Compare statistical profiles (min/max/avg/distinct count)
+          #
+          # For default @claude: don't pass any custom args to preserve default behavior
           claude_args: |
-            --mcp-config .github/mcp_config.json
-            --max-turns 50
-            --system-prompt-file ${{ steps.system-prompt.outputs.prompt_file }}
-            --allowedTools "Read(recce.yml),Bash(recce),Bash(recce mcp-server),Bash(ls target/manifest.json),Bash(ls target-base/manifest.json),Bash(cat target/manifest.json),Bash(cat target-base/manifest.json),Bash(gh pr view:*),Bash(jq *),mcp__recce__get_lineage_diff,mcp__recce__row_count_diff,mcp__recce__query,mcp__recce__query_diff,mcp__recce__profile_diff"
+            ${{ steps.system-prompt.outputs.milestone == 'default' && '' || '--mcp-config .github/mcp_config.json' }}
+            ${{ steps.system-prompt.outputs.milestone == 'default' && '' || '--max-turns 50' }}
+            ${{ steps.system-prompt.outputs.has_system_prompt == 'true' && format('--system-prompt-file {0}', steps.system-prompt.outputs.prompt_file) || '' }}
+            ${{ steps.system-prompt.outputs.milestone == 'ms1' && '--allowedTools "Read(*),Bash(gh pr *),Bash(git diff *),Bash(git log *),Bash(git show *)"' || '' }}
+            ${{ steps.system-prompt.outputs.milestone == 'ms2' && '--allowedTools "Read(recce.yml),Read(*.yml),Read(*.sql),Bash(gh pr *),Bash(recce mcp-server),Bash(recce version),mcp__recce__get_lineage_diff"' || '' }}
+            ${{ steps.system-prompt.outputs.milestone == 'ms3' && '--allowedTools "Read(recce.yml),Read(*.yml),Read(*.sql),Bash(recce),Bash(recce mcp-server),Bash(gh pr *),Bash(jq *),mcp__recce__get_lineage_diff,mcp__recce__row_count_diff,mcp__recce__query,mcp__recce__query_diff,mcp__recce__profile_diff"' || '' }}
+            ${{ steps.system-prompt.outputs.milestone == 'default' && '' || '--debug' }}

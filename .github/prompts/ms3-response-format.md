@@ -25,6 +25,8 @@ If no critical issues, state: "✅ No critical anomalies detected"
 - Direct Changes (columns): **N total** — **X modified**, **Y added**, **Z removed**
 - Indirect Impact: **N downstream columns** across **M models**
 
+> **Note**: If Modified Columns or Affected Models are less then 10, use below format: 
+
 ### Modified Columns
 
 - `model.column_name` → description of change
@@ -42,9 +44,19 @@ If no critical issues, state: "✅ No critical anomalies detected"
 - Removed: `removed_model` (if any)
 - Downstream: `downstream_model1`, `downstream_model2`
 
+> **Note**: If Modified Columns or Affected Models are more then 10, use below format: 
+
+### Top Columns Changes (by downsteam impact)
+- `model.column_name` → description of change
+- `model.column_name` → description of change
+- `model.column_name` → description of change
+- [X more columns] [link to lineage diff](#link to Recce Cloud)
+
 ---
 
 ## [REQUIRED] ✅ Test Status
+
+> **Note**: Read recce.yml to get what to test, the status can be: 
 
 - ✅ Schema validation: **N columns added/modified/removed**
 - ✅ Row count validation: **all stable** / specific changes noted
@@ -55,7 +67,7 @@ If no critical issues, state: "✅ No critical anomalies detected"
 ---
 
 ## [OPTIONAL] 📊 Validation Results
-**OTIONAL**: Show the diff section only when the test status are ⚠  or ❌. Skip the section if it's ✅
+**OPTIONAL**: Show the diff section only when the test status are ⚠  or ❌. Skip the section if it's ✅.
 
 
 ### Schema Diff
@@ -109,17 +121,12 @@ Use `mcp__recce__row_count_diff` results (prefer table format):
 
 ## [REQUIRED] 🔍 Suggested Checks
 
-Provide actionable check references (format: `Check type: targets`) based on validation suggestion: 
-- Investigate drivers of [specific metric] **±X%**; confirm the [change description] is intentional.
-- Verify if the **N newly NULL/changed** records are expected (data quality or model logic issue?).
-- Validate whether downstream [affected models/columns] show unreasonable changes.
-- Confirm business logic changes align with requirements.
+> **Note**: Provide actionable check references (format: `Check type: targets`) and suggest validation, the checks in Recce and link to launch to the check. The suggested checks can be: 
 
-- Row count diff: `model1`, `model2`
-- Distribution shift: `model.column_name`
-- NULL emergence: `model.column_name`
-- Downstream validation: `downstream_model.column_name`
-- Query validation: [specific business logic or metric]
+- Investigate drivers of [specific metric] **±X%**; confirm the [change description] is intentional. Link to profile diff in `model.column_name`
+- Verify if the **N newly NULL/changed** records are expected (data quality or model logic issue?). Link to value diff in `model.column_name`
+- Validate whether downstream [affected models/columns] show unreasonable changes. Like to query diff in `downstream_model.column_name`
+- Confirm business logic changes align with requirements.Link to XX diff in `model.column_name`
 
 ---
 
@@ -150,7 +157,6 @@ Before submitting your response, verify:
 - [ ] Section titles match exactly (including emoji indicators)
 - [ ] Major sections separated with `---` horizontal rules
 - [ ] Profile Diff uses table format (or list with explanation)
-- [ ] Row Count Diff section is present
 - [ ] Concrete values used instead of placeholders
 - [ ] Decision Guide provides clear merge/investigate/block guidance
 - [ ] Based on actual Recce MCP tool results, not assumptions
