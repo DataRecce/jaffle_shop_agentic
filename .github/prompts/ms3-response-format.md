@@ -67,7 +67,7 @@ If no critical issues, state: "✅ No critical anomalies detected"
 ---
 
 ## [OPTIONAL] 📊 Validation Results
-**OTIONAL**: Show the diff section only when the test status are ⚠  or ❌. Skip the section if it's ✅.
+**OPTIONAL**: Show the diff section only when the test status are ⚠  or ❌. Skip the section if it's ✅.
 
 
 ### Schema Diff
