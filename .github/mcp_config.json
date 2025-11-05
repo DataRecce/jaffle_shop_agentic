@@ -1,11 +1,9 @@
 {
   "mcpServers": {
     "recce": {
+      "type": "stdio",
       "command": "recce",
-      "args": [
-        "mcp-server"
-      ],
-      "env": {}
+      "args": ["mcp-server"]
     }
   }
 }

@@ -157,4 +157,3 @@ jobs:
           echo "📦 **Base artifacts:** Will be downloaded from \`dbt Base Environment\` workflow" >> $GITHUB_STEP_SUMMARY
           echo "   - Artifact name: \`dbt-artifacts-base-main\`" >> $GITHUB_STEP_SUMMARY
           echo "   - Updated when: main branch changes or weekly schedule" >> $GITHUB_STEP_SUMMARY
-
