@@ -26,36 +26,23 @@ jobs:
           # For PR events, checkout PR head; for issue_comment, will be updated in Get PR information step
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
-      - name: Checkout Recce Repository
-        uses: actions/checkout@v4
-        with:
-          repository: 'DataRecce/recce'
-          path: 'recce-repo'
-          # Currently using feature branch for MCP implementation
-          ref: 'main'
-          # Shallow clone to minimize download time and storage
-          fetch-depth: 1
-          # Disable sparse-checkout for now to ensure all necessary files for pip install are available
-          # sparse-checkout and sparse-checkout-cone-mode can be enabled if we identify specific paths needed
-
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           # Python 3.10 is used for compatibility with Recce and dbt-core
           # Recce requires Python 3.9+ per its setup.py
-          python-version: '3.10'
+          python-version: '3.12'
 
       - name: Cache Python dependencies
         uses: actions/cache@v4
         with:
           path: |
             ~/.cache/pip
-            ~/.local/lib/python3.10/site-packages
-          key: pip-recce-${{ runner.os }}-py3.10-${{ hashFiles('requirements.txt', 'recce-repo/setup.py', 'recce-repo/recce/VERSION') }}
+            ~/.local/lib/python3.12/site-packages
+          key: pip-recce-nightly-${{ runner.os }}-py3.12-${{ hashFiles('requirements.txt') }}
           restore-keys: |
-            pip-recce-${{ runner.os }}-py3.10-${{ hashFiles('requirements.txt') }}-
-            pip-recce-${{ runner.os }}-py3.10-
-            pip-recce-
+            pip-recce-nightly-${{ runner.os }}-py3.12-
+            pip-recce-nightly-
 
       - name: Cache dbt packages
         uses: actions/cache@v4
@@ -71,10 +58,6 @@ jobs:
         run: |
           pip install -r requirements.txt
 
-      - name: Install dbt packages
-        run: |
-          dbt deps
-
       - name: Get PR information for artifacts
         if: github.event.pull_request != null || github.event.issue.pull_request != null
         id: pr-info-artifacts
@@ -89,18 +72,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
 
-      # - name: Wait for dbt Build Workflow
-      #   if: github.event.pull_request != null || github.event.issue.pull_request != null
-      #   uses: lewagon/wait-on-check-action@v1.4.1
-      #   with:
-      #     ref: ${{ github.event.pull_request.head.sha || github.sha }}
-      #     check-name: 'dbt-build'
-      #     repo-token: ${{ github.token }}
-      #     wait-interval: 10
-      #     allowed-conclusions: success,skipped,failure
-
       - name: Download Current Artifacts
-        if: github.event.pull_request != null || github.event.issue.pull_request != null
+        if: |
+          (github.event.pull_request != null || github.event.issue.pull_request != null) &&
+          (contains(github.event.comment.body, '/ms2') || contains(github.event.comment.body, '/ms3') || contains(github.event.comment.body, '/one-summary'))
         id: download-current
         continue-on-error: false
         uses: dawidd6/action-download-artifact@v11
@@ -108,13 +83,15 @@ jobs:
           name: dbt-artifacts-current-${{ steps.pr-info-artifacts.outputs.pr_number }}
           path: target/
           github_token: ${{ github.token }}
-          workflow: dbt-build-artifacts.yml
+          workflow: dbt-build-pr.yml
           pr: ${{ steps.pr-info-artifacts.outputs.pr_number }}
           check_artifacts: true
           search_artifacts: true
 
       - name: Download Base Artifacts
-        if: github.event.pull_request != null || github.event.issue.pull_request != null
+        if: |
+          (github.event.pull_request != null || github.event.issue.pull_request != null) &&
+          (contains(github.event.comment.body, '/ms2') || contains(github.event.comment.body, '/ms3') || contains(github.event.comment.body, '/one-summary'))
         id: download-base
         continue-on-error: false
         uses: dawidd6/action-download-artifact@v11
@@ -127,42 +104,19 @@ jobs:
           check_artifacts: true
           search_artifacts: true
 
-      - name: Install Recce from source
+      - name: Install Recce with MCP support
+        if: contains(github.event.comment.body, '/ms2') || contains(github.event.comment.body, '/ms3') || contains(github.event.comment.body, '/one-summary')
         run: |
-          # Verify checkout directory exists and contains setup.py
-          if [ ! -d "./recce-repo" ]; then
-            echo "::error::Recce repository not found at ./recce-repo"
-            exit 1
-          fi
-          
-          if [ ! -f "./recce-repo/setup.py" ]; then
-            echo "::error::setup.py not found in recce-repo. Checkout may be incomplete."
-            exit 1
-          fi
-          
-          # Verify VERSION file exists (required by setup.py)
-          if [ ! -f "./recce-repo/recce/VERSION" ]; then
-            echo "::error::VERSION file not found. Package data may be incomplete."
-            exit 1
-          fi
-          
+          echo "::group::Installing Recce Nightly with MCP support"
+
           # Upgrade pip, setuptools, and wheel to ensure proper dependency resolution
           echo "Upgrading pip, setuptools, and wheel..."
           pip install --upgrade pip setuptools wheel
-          
-          # Install packaging first (required by some dependencies)
-          echo "Installing base dependencies..."
-          pip install packaging
-          
-          # Install Recce with all dependencies
-          # Using -e for editable mode, with explicit dependency installation
-          echo "Installing Recce from source with all dependencies..."
-          pip install -e "./recce-repo[dev]"
-          
-          # Install any missing common dependencies that might not be in setup.py
-          echo "Installing additional common dependencies..."
-          pip install pytz tzdata mcp
-          
+
+          # Install Recce Nightly with MCP extras
+          echo "Installing recce-nightly[mcp]..."
+          pip install "git+https://github.com/DataRecce/recce.git@main#egg=recce[mcp]"
+
           # Verify installation
           if command -v recce >/dev/null 2>&1; then
             echo "✓ Recce installed successfully: $(which recce)"
@@ -171,18 +125,22 @@ jobs:
             echo "::error::Recce installation failed - command not found"
             exit 1
           fi
-          
+
           # Verify critical dependencies are installed
           echo "Verifying critical dependencies..."
-          python -c "import pytz; import mcp; import fastapi; import click; print('✓ All critical dependencies verified')" || {
+          python -c "import mcp; import fastapi; import click; print('✓ All critical dependencies verified')" || {
             echo "::error::Some critical dependencies are missing"
             echo "Installed packages:"
             pip list
             exit 1
           }
 
+          echo "::endgroup::"
+
       - name: Validate Artifacts
-        if: github.event.pull_request != null || github.event.issue.pull_request != null
+        if: |
+          (github.event.pull_request != null || github.event.issue.pull_request != null) &&
+          (contains(github.event.comment.body, '/ms2') || contains(github.event.comment.body, '/ms3') || contains(github.event.comment.body, '/one-summary'))
         id: validate-artifacts
         run: |
           echo "::group::Validating downloaded artifacts"
@@ -213,209 +171,106 @@ jobs:
         if: github.event.pull_request != null || github.event.issue.pull_request != null
         id: system-prompt
         run: |
-          # Load response format template
-          if [ ! -f ".github/prompts/recce-analysis-format.md" ]; then
-            echo "::error::Response format guide not found at .github/prompts/recce-analysis-format.md"
-            exit 1
+          echo "::group::Composing system prompt based on milestone"
+          
+          COMMENT_BODY="${{ github.event.comment.body }}"
+          
+          # Store comment body for system prompt (will be injected into prompt to provide context)
+          # Note: We don't use the 'prompt' parameter to preserve Claude action's default MCP and PR comment behavior
+          echo "comment_body=$COMMENT_BODY" >> $GITHUB_OUTPUT
+          
+          # Detect milestone command
+          if echo "$COMMENT_BODY" | grep -q "/ms1"; then
+            MILESTONE="ms1"
+            SYSTEM_PROMPT_FILE=".github/prompts/ms1-system-prompt.md"
+            RESPONSE_TEMPLATE=".github/prompts/ms1-response-format.md"
+            echo "📋 Milestone: MS1 (PR/Git only)"
+          elif echo "$COMMENT_BODY" | grep -q "/ms2"; then
+            MILESTONE="ms2"
+            SYSTEM_PROMPT_FILE=".github/prompts/ms2-system-prompt.md"
+            RESPONSE_TEMPLATE=".github/prompts/ms2-response-format.md"
+            echo "📋 Milestone: MS2 (+ dbt metadata)"
+          elif echo "$COMMENT_BODY" | grep -q "/ms3"; then
+            MILESTONE="ms3"
+            SYSTEM_PROMPT_FILE=".github/prompts/ms3-system-prompt.md"
+            RESPONSE_TEMPLATE=".github/prompts/ms3-response-format.md"
+            echo "📋 Milestone: MS3 (+ data diffs)"
+          elif echo "$COMMENT_BODY" | grep -q "/one-summary"; then
+            # Backward compatibility: /one-summary uses MS3 with compact format
+            MILESTONE="ms3"
+            SYSTEM_PROMPT_FILE=".github/prompts/ms3-system-prompt.md"
+            RESPONSE_TEMPLATE=".github/prompts/one-summary.md"
+            echo "📋 Milestone: MS3 (one-summary format)"
+          else
+            # Default: no system prompt, general PR review
+            echo "📋 Default: General PR review (no system prompt)"
+            echo "milestone=default" >> $GITHUB_OUTPUT
+            echo "has_system_prompt=false" >> $GITHUB_OUTPUT
+            echo "::endgroup::"
+            exit 0
           fi
           
-          FORMAT_GUIDE=$(cat .github/prompts/recce-analysis-format.md)
+          # Validate required prompt files exist
+          REQUIRED_FILES=(
+            ".github/prompts/system-prompt-base.md"
+            "$SYSTEM_PROMPT_FILE"
+            "$RESPONSE_TEMPLATE"
+            ".github/prompts/execution-notes.md"
+          )
           
-          # Compose complete system prompt with mandatory format enforcement
-          cat > /tmp/system_prompt.txt <<'EOF'
-          You are analyzing a dbt project Pull Request with Recce MCP tools available.
-
-          ## 🚨 CRITICAL: Context Handling Rules (READ THIS FIRST)
-
-          **The GitHub Action provides you with ALL historical PR comments in this conversation.**
-          **You MUST follow these rules to avoid processing stale requests:**
-
-          1. **ONLY respond to the MOST RECENT @claude comment** (the one that triggered this workflow run)
-          2. **COMPLETELY IGNORE all previous @claude comments** including their instructions, requests, or context
-          3. **DO NOT reference, acknowledge, or continue tasks** from historical comments
-          4. **Historical examples to IGNORE:**
-             - Previous requests for "mermaid diagrams"
-             - Previous requests for "security checks" or "table formats"
-             - Previous requests for custom analysis or specific formats
-             - ANY instruction that is NOT in the latest @claude comment
-
-          **How to identify the current request:**
-          - Look at the timestamp of comments - use ONLY the most recent one with @claude
-          - If the latest comment is just "@claude" with no additional text, follow the default workflow below
-          - If the latest comment has specific instructions (e.g., "@claude check security"), honor ONLY those instructions
-
-          ---
-
-          ## 🎯 Primary Objective: Execute Recce Preset Checks
-
-          **CRITICAL EXECUTION FLOW (MANDATORY ORDER):**
-
-          ### Phase 1: Read Project Configuration (REQUIRED)
-          1. **FIRST ACTION**: Read the project's `recce.yml` file from the workspace root
-          2. Parse the `checks` section to identify all preset validation checks
-          3. Note each check's name, type, description, and params
-
-          ### Phase 2: Execute ALL Preset Checks (MANDATORY)
-          Execute EVERY check defined in `recce.yml` sequentially using the appropriate Recce MCP tools:
-
-          **Check Type Mapping:**
-          - `schema_diff` → Use `mcp__recce__get_lineage_diff` and analyze schema changes
-          - `row_count_diff` → Use `mcp__recce__row_count_diff` with the `select` parameter
-          - `value_diff` → Use `mcp__recce__query_diff` or `mcp__recce__profile_diff` for specific columns
-          - `query_diff` → Use `mcp__recce__query_diff` with the provided `sql_template`
-          - `profile_diff` → Use `mcp__recce__profile_diff` for statistical analysis
-
-          **Execution Requirements:**
-          - Execute checks in the order they appear in `recce.yml`
-          - Use the exact parameters specified in each check's `params` section
-          - Collect all results before proceeding to Phase 3
-          - If a check fails to execute, document the error and continue with remaining checks
-
-          ### Phase 3: Analyze Results and Determine Output Format
-
-          **Decision Logic:**
-          - **IF any check result shows anomalies** (threshold exceeded, unexpected changes, data quality issues):
-            → Output FULL PR Validation Summary using the format template below
-          - **IF all checks pass without anomalies**:
-            → Output brief success message: "✅ All Recce preset checks passed. No anomalies detected."
-
-          **Anomaly Detection Criteria:**
-          - Row count changes > 5% (or custom threshold in check definition)
-          - Schema changes (added/removed/modified columns)
-          - Profile metrics exceed specified thresholds
-          - Unexpected NULL values or data quality issues
-          - Query diff results show significant variance
-
-          ### Phase 4: Handle User's Additional Request (OPTIONAL)
-
-          **Processing the LATEST @claude comment:**
-          1. **COMPLETE Phases 1-3 FIRST** before addressing any user-specific requests
-          2. Check if the latest @claude comment contains additional instructions beyond just "@claude"
-          3. If yes, add a new section at the end: "## 📎 Additional Analysis (Per User Request)"
-          4. Address the specific request AFTER completing preset checks
-          5. If the user's request conflicts with preset checks or format requirements:
-             - Prioritize preset checks and format rules
-             - Explain the constraint politely in the response
-
-          **Important Notes:**
-          - You may use Mermaid diagrams to visualize lineage if YOU determine it's helpful OR if the latest comment requests it
-          - Do NOT create Mermaid diagrams just because a historical comment requested it
-          - Focus on what the CURRENT comment asks for, not historical requests
+          for file in "${REQUIRED_FILES[@]}"; do
+            if [ ! -f "$file" ]; then
+              echo "::error::Required prompt file not found: $file"
+              exit 1
+            fi
+            echo "✓ Found: $file"
+          done
           
-          ---
-          
-          ## Response Format Requirements
-          
-          **ONLY use this detailed format when anomalies are detected in Phase 3.**
-          
-          CRITICAL RULES (NON-NEGOTIABLE):
-          1. Use "# PR Validation Summary" as the main title (H1 heading)
-          2. Follow the section order EXACTLY as specified
-          3. Use the EXACT section titles with emoji indicators
-          4. Separate major sections with "---" horizontal rules
-          5. Include ALL [REQUIRED] sections even if content is brief
-          6. You may omit [OPTIONAL] sections if not applicable, but maintain section order
-          7. For Profile Diff and Row Count data, PREFER markdown tables; use lists ONLY if table data is incomplete
-          8. Use concrete values from Recce tool results, NEVER use placeholders like "X" or "value"
-          
-          EOF
-          
-          # Append the complete format template
+          # Compose system prompt for MS1/MS2/MS3
+          # Inject current comment context at the beginning
+          echo "## Current User Request" > /tmp/system_prompt.txt
           echo "" >> /tmp/system_prompt.txt
-          echo "$FORMAT_GUIDE" >> /tmp/system_prompt.txt
+          echo "The user mentioned @claude with the following comment:" >> /tmp/system_prompt.txt
+          echo '```' >> /tmp/system_prompt.txt
+          echo "$COMMENT_BODY" >> /tmp/system_prompt.txt
+          echo '```' >> /tmp/system_prompt.txt
+          echo "" >> /tmp/system_prompt.txt
+          echo "**IMPORTANT**: Focus ONLY on this current comment. Ignore any previous @claude mentions or historical discussions in the PR thread." >> /tmp/system_prompt.txt
+          echo "" >> /tmp/system_prompt.txt
+          echo "---" >> /tmp/system_prompt.txt
+          echo "" >> /tmp/system_prompt.txt
+          
+          # Add base system prompt
+          cat .github/prompts/system-prompt-base.md >> /tmp/system_prompt.txt
+          echo "" >> /tmp/system_prompt.txt
+          
+          # Add milestone-specific prompt
+          cat "$SYSTEM_PROMPT_FILE" >> /tmp/system_prompt.txt
+          echo "" >> /tmp/system_prompt.txt
+          
+          # Add response format
+          cat "$RESPONSE_TEMPLATE" >> /tmp/system_prompt.txt
+          echo "" >> /tmp/system_prompt.txt
           
           # Add execution notes
-          cat >> /tmp/system_prompt.txt <<'EOF'
+          cat .github/prompts/execution-notes.md >> /tmp/system_prompt.txt
           
-          ---
-          
-          ## ⚙️ Execution Checklist
-
-          Before responding, verify you have:
-
-          - [ ] 🚨 **CRITICAL**: Identified the MOST RECENT @claude comment by timestamp (ignored ALL historical @claude comments)
-          - [ ] 🚨 **CRITICAL**: Confirmed you are NOT responding to any historical requests (mermaid diagrams, security checks, etc. from old comments)
-          - [ ] ✅ Phase 1: Read and parsed `recce.yml` from workspace root
-          - [ ] ✅ Phase 2: Executed ALL preset checks defined in `recce.yml` using appropriate MCP tools
-          - [ ] ✅ Phase 3: Analyzed results and determined if anomalies exist
-          - [ ] ✅ Phase 3: Chose correct output format (brief success OR full validation summary)
-          - [ ] ✅ Phase 4: Checked if latest @claude comment has additional instructions beyond "@claude"
-          - [ ] ✅ Phase 4: If yes, addressed user's additional request AFTER preset checks in separate section
-          - [ ] ✅ Validation: All concrete values from actual Recce MCP results (no placeholders)
-          - [ ] ✅ Validation: If using full format, verified against Output Validation Checklist
-
-          ## 🚫 Common Mistakes to Avoid
-
-          1. **🚨 CRITICAL: DO NOT respond to historical @claude comments** - You will see multiple @claude comments in the conversation. ONLY the latest one matters!
-          2. **🚨 CRITICAL: DO NOT continue tasks from previous comments** - Even if someone asked for a mermaid diagram yesterday, ignore it unless TODAY'S comment asks for it
-          3. **DO NOT skip reading `recce.yml`** - this is the first mandatory step
-          4. **DO NOT execute generic checks** - only execute checks defined in `recce.yml`
-          5. **DO NOT output full report if all checks pass** - use brief success message instead
-          6. **DO NOT let user requests override preset checks** - always complete preset checks first
-          7. **DO NOT use placeholder values** - all data must come from actual MCP tool results
-          
-          ## Example Execution Flow
-
-          **Scenario A: All Checks Pass (Simple "@claude" comment)**
-          ```
-          0. 🚨 Context Check: See 5 historical @claude comments, latest is just "@claude" from Oct 30, 15:18
-          1. ✅ Ignore all historical requests (mermaid diagrams, security checks from Oct 28-29)
-          2. Read recce.yml → Found 4 preset checks
-          3. Execute schema_diff for customers, orders, modified nodes → No schema changes
-          4. Execute row_count_diff for customers, orders → Counts stable
-          5. Execute value_diff for customers.customer_lifetime_value → 100% match
-          6. Execute query_diff for avg lifetime value → No variance
-          7. Result: All checks passed
-          8. Output: "✅ All Recce preset checks passed. No anomalies detected."
-          9. Check latest comment for additional requests → Just "@claude", no additional requests
-          10. Done (NO mermaid diagram even though historical comment asked for it)
-          ```
-
-          **Scenario B: Anomaly Detected + User Request in Latest Comment**
-          ```
-          0. 🚨 Context Check: Latest @claude comment says "@claude also check SQL performance"
-          1. ✅ Ignore historical comments (focus only on "check SQL performance" from current comment)
-          2. Read recce.yml → Found 4 preset checks
-          3. Execute schema_diff → No changes
-          4. Execute row_count_diff → customers: -15% (ANOMALY)
-          5. Execute value_diff → 95% match (ANOMALY: 5% mismatch)
-          6. Execute query_diff → avg variance -32.1% (ANOMALY)
-          7. Result: Multiple anomalies detected
-          8. Output: Full PR Validation Summary with detailed findings
-          9. Latest comment has additional request "check SQL performance"
-          10. Add "## 📎 Additional Analysis (Per User Request)" section with SQL performance check
-          11. Done
-          ```
-
-          **Scenario C: Historical Mermaid Request (Should be IGNORED)**
-          ```
-          0. 🚨 Context Check: See comment from Oct 29 asking for mermaid diagram, but latest @claude is from Oct 30 with just "@claude"
-          1. ✅ Ignore the mermaid request from Oct 29 - it's historical!
-          2. Read recce.yml → Found 4 preset checks
-          3. Execute all preset checks...
-          4. Output: Based on Phase 3 decision (brief or full report)
-          5. Do NOT create mermaid diagram (unless YOU decide it's helpful for explaining anomalies)
-          6. Done
-          ```
-
-          REMEMBER:
-          - 🚨 **Context isolation is CRITICAL** - Always start by identifying the LATEST @claude comment
-          - 🚨 **Historical noise** - You WILL see old requests. Ignore them completely!
-          - recce.yml defines the checks → Execute them ALL → Analyze results → Choose output format → Handle CURRENT user request
-          - Preset checks are mandatory, current user requests are additive
-          - Use Mermaid if YOU think it helps OR if CURRENT comment asks for it
-          EOF
-          
-          # Store prompt file path for next step
+          echo "milestone=$MILESTONE" >> $GITHUB_OUTPUT
+          echo "has_system_prompt=true" >> $GITHUB_OUTPUT
           echo "prompt_file=/tmp/system_prompt.txt" >> $GITHUB_OUTPUT
           
-          # Display prompt for debugging (first 50 lines)
-          echo "::group::System Prompt Preview"
+          # Display prompt preview for debugging
+          echo "System prompt composed successfully ($(wc -l < /tmp/system_prompt.txt) lines)"
+          echo "::group::System Prompt Preview (first 50 lines)"
           head -50 /tmp/system_prompt.txt
+          echo "::endgroup::"
+          
           echo "::endgroup::"
 
       - name: Validate MCP Configuration
-        if: github.event.pull_request != null || github.event.issue.pull_request != null
+        if: |
+          (github.event.pull_request != null || github.event.issue.pull_request != null) &&
+          (contains(github.event.comment.body, '/ms2') || contains(github.event.comment.body, '/ms3') || contains(github.event.comment.body, '/one-summary'))
         run: |
           # Show current working directory and files for debugging
           echo "Current directory: $(pwd)"
@@ -454,55 +309,74 @@ jobs:
           fi
 
       - name: Test Recce MCP Server
-        if: github.event.pull_request != null || github.event.issue.pull_request != null
+        if: |
+          (github.event.pull_request != null || github.event.issue.pull_request != null) &&
+          (contains(github.event.comment.body, '/ms2') || contains(github.event.comment.body, '/ms3') || contains(github.event.comment.body, '/one-summary'))
         run: |
-          echo "Testing Recce MCP server startup..."
-
-          echo "Testing Recce MCP server with full parameters..."
-          CMD="recce mcp-server --project-dir . --profiles-dir . --config recce.yml --target-path target --target-base-path target-base"
-          echo "Command: $CMD"
-
-          # 啟動並收集輸出
+          echo "::group::Testing Recce MCP server startup"
+          
+          CMD="recce mcp-server"
           LOG_FILE="recce_mcp_startup.log"
+          
+          echo "Command to test: $CMD"
+          echo "Log file: $LOG_FILE"
+          echo ""
+          
+          # 啟動 Recce MCP server 並收集輸出
+          echo "Starting Recce MCP server (with 5s timeout)..."
           timeout 5s bash -c "$CMD" >"$LOG_FILE" 2>&1 & 
           MCP_PID=$!
-
-          sleep 1
-
+          echo "Process started with PID: $MCP_PID"
+          
+          # 等待 server 初始化
+          sleep 2
+          
+          # 檢查 process 狀態
+          echo ""
+          echo "Checking process status..."
           if ! kill -0 "$MCP_PID" 2>/dev/null; then
-            echo "::error::Recce MCP server failed to start"
-            cat "$LOG_FILE" || true
+            echo "::error::Recce MCP server process is not running"
+            echo "::group::MCP Server Output (Failed Start)"
+            cat "$LOG_FILE" || echo "No log output captured"
+            echo "::endgroup::"
             exit 1
+          else
+            echo "✓ Process is running (PID: $MCP_PID)"
           fi
-
-          # 檢查是否有「Too few parameters」錯誤
-          if grep -q "Too few parameters" "$LOG_FILE"; then
-            echo "::error::Recce MCP server start error detected: Too few parameters"
+          
+          # 檢查 log 內容是否有錯誤
+          echo ""
+          echo "Checking server logs for errors..."
+          if grep -qi "error\|exception\|too few parameters\|failed" "$LOG_FILE"; then
+            echo "::error::Recce MCP server started but errors detected in logs"
+            echo "::group::MCP Server Output (With Errors)"
             cat "$LOG_FILE"
-            kill "$MCP_PID" || true
+            echo "::endgroup::"
+            kill "$MCP_PID" 2>/dev/null || true
             exit 1
+          else
+            echo "✓ No critical errors found in logs"
           fi
-
-          echo "✓ Recce MCP server started without parameter errors (PID: $MCP_PID)"
-          kill "$MCP_PID"
-
-      - name: Clean working directory before Claude Code Action
-        if: github.event.pull_request != null || github.event.issue.pull_request != null
-        run: |
-          echo "::group::Cleaning working directory for Claude Code Action"
-          echo "Current branch: $(git branch --show-current)"
-          echo "Git status before cleaning:"
-          git status --short
-
-          # Claude Code Action will perform its own checkout internally
-          # We need to ensure no untracked files will conflict with that checkout
-          # Stash everything including untracked files
-          echo "Stashing all changes including untracked files..."
-          git add -A
-          git stash push -u -m "Temporary stash before Claude Code Action" || echo "Nothing to stash"
-
-          echo "Git status after cleaning:"
-          git status --short
+          
+          # 顯示完整 log
+          echo ""
+          echo "::group::MCP Server Output (Full Log)"
+          cat "$LOG_FILE" || echo "No log output captured"
+          echo "::endgroup::"
+          
+          # 清理 process
+          echo ""
+          echo "Stopping MCP server process..."
+          kill "$MCP_PID" 2>/dev/null || true
+          sleep 1
+          
+          # 確認 process 已結束
+          if kill -0 "$MCP_PID" 2>/dev/null; then
+            echo "::warning::Process still running, sending SIGKILL..."
+            kill -9 "$MCP_PID" 2>/dev/null || true
+          fi
+          
+          echo "✓ Recce MCP server test completed successfully"
           echo "::endgroup::"
 
       - name: Run Claude Code with Recce MCP
@@ -510,16 +384,35 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # NOTE: We do NOT set 'prompt' parameter here to preserve Claude action's default behavior
+          # The comment context is injected into system prompt instead
 
           # This is an optional setting that allows Claude to read CI results on PRs
           additional_permissions: |
             actions: read
 
           # Configure Recce MCP tools via claude_args
-          # Available tools: get_lineage_diff, row_count_diff, query, query_diff, profile_diff
-          # Note: Recce tools are only available when running in PR context with artifacts
+          # 
+          # Milestone-Based Tool Access:
+          # - Default (@claude): General PR review, uses Claude action's default behavior (no custom args)
+          # - MS1 (/ms1): Git/PR context only - GitHub CLI, Git commands
+          # - MS2 (/ms2): + dbt metadata - lineage_diff MCP tool only
+          # - MS3 (/ms3): + data diffs - all Recce MCP tools
+          # - /one-summary: MS3 with compact format
+          #
+          # Available MCP tools (5 total for MS3):
+          # 1. get_lineage_diff: Get lineage diff (added/removed/modified models)
+          # 2. row_count_diff: Compare row counts between base and current
+          # 3. query: Execute SQL query on specified environment (supports Jinja templates)
+          # 4. query_diff: Compare SQL query results between base and current
+          # 5. profile_diff: Compare statistical profiles (min/max/avg/distinct count)
+          #
+          # For default @claude: don't pass any custom args to preserve default behavior
           claude_args: |
-            --mcp-config .github/mcp_config.json
-            --max-turns 50
-            --system-prompt-file ${{ steps.system-prompt.outputs.prompt_file }}
-            --allowedTools "Read(recce.yml),Bash(recce),Bash(recce mcp-server),Bash(ls target/manifest.json),Bash(ls target-base/manifest.json),Bash(gh pr view:*),Bash(jq -r *),mcp__recce__get_lineage_diff,mcp__recce__row_count_diff,mcp__recce__query,mcp__recce__query_diff,mcp__recce__profile_diff"
+            ${{ steps.system-prompt.outputs.milestone == 'default' && '' || '--mcp-config .github/mcp_config.json' }}
+            ${{ steps.system-prompt.outputs.milestone == 'default' && '' || '--max-turns 50' }}
+            ${{ steps.system-prompt.outputs.has_system_prompt == 'true' && format('--system-prompt-file {0}', steps.system-prompt.outputs.prompt_file) || '' }}
+            ${{ steps.system-prompt.outputs.milestone == 'ms1' && '--allowedTools "Read(*),Bash(gh pr *),Bash(git diff *),Bash(git log *),Bash(git show *)"' || '' }}
+            ${{ steps.system-prompt.outputs.milestone == 'ms2' && '--allowedTools "Read(recce.yml),Read(*.yml),Read(*.sql),Bash(gh pr *),Bash(recce mcp-server),Bash(recce version),mcp__recce__get_lineage_diff"' || '' }}
+            ${{ steps.system-prompt.outputs.milestone == 'ms3' && '--allowedTools "Read(recce.yml),Read(*.yml),Read(*.sql),Bash(recce),Bash(recce mcp-server),Bash(gh pr *),Bash(jq *),mcp__recce__get_lineage_diff,mcp__recce__row_count_diff,mcp__recce__query,mcp__recce__query_diff,mcp__recce__profile_diff"' || '' }}
+            ${{ steps.system-prompt.outputs.milestone == 'default' && '' || '--debug' }}
