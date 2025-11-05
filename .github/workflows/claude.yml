@@ -174,6 +174,16 @@ jobs:
           echo "::group::Composing system prompt based on milestone"
           
           COMMENT_BODY="${{ github.event.comment.body }}"
+          # Trim whitespace from comment body
+          COMMENT_BODY_TRIMMED=$(echo "$COMMENT_BODY" | xargs)
+          
+          # Prepare prompt: if comment is just "@claude" or empty, use default prompt
+          if [ "$COMMENT_BODY_TRIMMED" = "@claude" ] || [ -z "$COMMENT_BODY_TRIMMED" ]; then
+            PROMPT_TEXT="/review-pr"
+            echo "prompt_text=$PROMPT_TEXT" >> $GITHUB_OUTPUT
+          else
+            echo "prompt_text=$COMMENT_BODY" >> $GITHUB_OUTPUT
+          fi
           
           # Detect milestone command
           if echo "$COMMENT_BODY" | grep -q "/ms1"; then
@@ -360,9 +370,9 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          # Use comment body as prompt if provided, otherwise use action's default prompt
-          # If comment is just "@claude" (with optional whitespace), use default prompt
-          prompt: ${{ (trim(github.event.comment.body) == '@claude' || github.event.comment.body == '') && '/review-pr' || github.event.comment.body }}
+          # Use processed prompt from system-prompt step
+          # If comment is just "@claude" or empty, uses "/review-pr" as default
+          prompt: ${{ steps.system-prompt.outputs.prompt_text || github.event.comment.body }}
 
           # This is an optional setting that allows Claude to read CI results on PRs
           additional_permissions: |
