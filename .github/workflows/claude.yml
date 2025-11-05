@@ -174,17 +174,10 @@ jobs:
           echo "::group::Composing system prompt based on milestone"
           
           COMMENT_BODY="${{ github.event.comment.body }}"
-          # Trim whitespace from comment body
-          COMMENT_BODY_TRIMMED=$(echo "$COMMENT_BODY" | xargs)
           
-          # Prepare prompt: if comment is just "@claude" or empty, don't override prompt
-          # Let Claude action use its default behavior
-          if [ "$COMMENT_BODY_TRIMMED" = "@claude" ] || [ -z "$COMMENT_BODY_TRIMMED" ]; then
-            echo "use_default_prompt=true" >> $GITHUB_OUTPUT
-          else
-            echo "use_default_prompt=false" >> $GITHUB_OUTPUT
-            echo "prompt_text=$COMMENT_BODY" >> $GITHUB_OUTPUT
-          fi
+          # Store comment body for system prompt (will be injected into prompt to provide context)
+          # Note: We don't use the 'prompt' parameter to preserve Claude action's default MCP and PR comment behavior
+          echo "comment_body=$COMMENT_BODY" >> $GITHUB_OUTPUT
           
           # Detect milestone command
           if echo "$COMMENT_BODY" | grep -q "/ms1"; then
@@ -234,12 +227,32 @@ jobs:
           done
           
           # Compose system prompt for MS1/MS2/MS3
-          cat .github/prompts/system-prompt-base.md > /tmp/system_prompt.txt
+          # Inject current comment context at the beginning
+          echo "## Current User Request" > /tmp/system_prompt.txt
           echo "" >> /tmp/system_prompt.txt
+          echo "The user mentioned @claude with the following comment:" >> /tmp/system_prompt.txt
+          echo '```' >> /tmp/system_prompt.txt
+          echo "$COMMENT_BODY" >> /tmp/system_prompt.txt
+          echo '```' >> /tmp/system_prompt.txt
+          echo "" >> /tmp/system_prompt.txt
+          echo "**IMPORTANT**: Focus ONLY on this current comment. Ignore any previous @claude mentions or historical discussions in the PR thread." >> /tmp/system_prompt.txt
+          echo "" >> /tmp/system_prompt.txt
+          echo "---" >> /tmp/system_prompt.txt
+          echo "" >> /tmp/system_prompt.txt
+          
+          # Add base system prompt
+          cat .github/prompts/system-prompt-base.md >> /tmp/system_prompt.txt
+          echo "" >> /tmp/system_prompt.txt
+          
+          # Add milestone-specific prompt
           cat "$SYSTEM_PROMPT_FILE" >> /tmp/system_prompt.txt
           echo "" >> /tmp/system_prompt.txt
+          
+          # Add response format
           cat "$RESPONSE_TEMPLATE" >> /tmp/system_prompt.txt
           echo "" >> /tmp/system_prompt.txt
+          
+          # Add execution notes
           cat .github/prompts/execution-notes.md >> /tmp/system_prompt.txt
           
           echo "milestone=$MILESTONE" >> $GITHUB_OUTPUT
@@ -371,8 +384,8 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          # Only set prompt for milestone commands, otherwise let Claude use default behavior
-          prompt: ${{ steps.system-prompt.outputs.use_default_prompt != 'true' && steps.system-prompt.outputs.prompt_text || '' }}
+          # NOTE: We do NOT set 'prompt' parameter here to preserve Claude action's default behavior
+          # The comment context is injected into system prompt instead
 
           # This is an optional setting that allows Claude to read CI results on PRs
           additional_permissions: |
@@ -399,7 +412,7 @@ jobs:
             ${{ steps.system-prompt.outputs.milestone == 'default' && '' || '--mcp-config .github/mcp_config.json' }}
             ${{ steps.system-prompt.outputs.milestone == 'default' && '' || '--max-turns 50' }}
             ${{ steps.system-prompt.outputs.has_system_prompt == 'true' && format('--system-prompt-file {0}', steps.system-prompt.outputs.prompt_file) || '' }}
-            ${{ steps.system-prompt.outputs.milestone == 'ms1' && '--allowedTools "Read(*),Bash(gh pr view *),Bash(gh pr diff *),Bash(git diff *),Bash(git log *),Bash(git show *)"' || '' }}
-            ${{ steps.system-prompt.outputs.milestone == 'ms2' && '--allowedTools "Read(recce.yml),Read(*.yml),Read(*.sql),Bash(gh pr view *),Bash(recce mcp-server),Bash(recce version),mcp__recce__get_lineage_diff"' || '' }}
-            ${{ steps.system-prompt.outputs.milestone == 'ms3' && '--allowedTools "Read(recce.yml),Read(*.yml),Read(*.sql),Bash(recce),Bash(recce mcp-server),Bash(gh pr view *),Bash(jq *),mcp__recce__get_lineage_diff,mcp__recce__row_count_diff,mcp__recce__query,mcp__recce__query_diff,mcp__recce__profile_diff"' || '' }}
+            ${{ steps.system-prompt.outputs.milestone == 'ms1' && '--allowedTools "Read(*),Bash(gh pr *),Bash(git diff *),Bash(git log *),Bash(git show *)"' || '' }}
+            ${{ steps.system-prompt.outputs.milestone == 'ms2' && '--allowedTools "Read(recce.yml),Read(*.yml),Read(*.sql),Bash(gh pr *),Bash(recce mcp-server),Bash(recce version),mcp__recce__get_lineage_diff"' || '' }}
+            ${{ steps.system-prompt.outputs.milestone == 'ms3' && '--allowedTools "Read(recce.yml),Read(*.yml),Read(*.sql),Bash(recce),Bash(recce mcp-server),Bash(gh pr *),Bash(jq *),mcp__recce__get_lineage_diff,mcp__recce__row_count_diff,mcp__recce__query,mcp__recce__query_diff,mcp__recce__profile_diff"' || '' }}
             ${{ steps.system-prompt.outputs.milestone == 'default' && '' || '--debug' }}
