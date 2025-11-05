@@ -179,7 +179,7 @@ jobs:
           
           # Prepare prompt: if comment is just "@claude" or empty, use default prompt
           if [ "$COMMENT_BODY_TRIMMED" = "@claude" ] || [ -z "$COMMENT_BODY_TRIMMED" ]; then
-            PROMPT_TEXT="/review-pr"
+            PROMPT_TEXT="/review"
             echo "prompt_text=$PROMPT_TEXT" >> $GITHUB_OUTPUT
           else
             echo "prompt_text=$COMMENT_BODY" >> $GITHUB_OUTPUT
