@@ -2,147 +2,167 @@
 
 ## ⚙️ Execution Checklist
 
-**⚠️ STEP 0 (MANDATORY BEFORE ALL OTHER STEPS):**
+### For All Milestones
 
-- [ ] 🚨 **STEP 0a**: Scanned ALL comments in the conversation for @claude mentions
-- [ ] 🚨 **STEP 0b**: Found the MOST RECENT @claude comment by comparing timestamps (YYYY-MM-DDTHH:MM:SSZ format)
-- [ ] 🚨 **STEP 0c**: Confirmed this is THE ONLY comment I will respond to (all others are historical noise)
-- [ ] 🚨 **STEP 0d**: Verified I will NOT reference, acknowledge, or continue ANY task from previous @claude comments
+- [ ] 🚨 **Tool Restriction**: Will ONLY use tools allowed for this milestone
+- [ ] 🚨 **No CLI Commands**: Will NOT run `recce run` or other CLI commands (except verification)
+- [ ] 🚨 **MCP Understanding**: Understood that MCP tools provide LOW-LEVEL analysis, NOT preset check execution
+- [ ] ✅ **Concrete Values**: All data from actual tool results (no placeholders)
 
-**After completing Step 0, verify you have:**
+### MS1 Checklist (Git/PR Only)
 
-- [ ] 🚨 **CRITICAL**: Confirmed you are NOT responding to any historical requests (mermaid diagrams, security checks, etc. from old comments)
-- [ ] 🚨 **CRITICAL**: Will ONLY use MCP tools (`mcp__recce__*`), NOT Recce CLI commands like `recce run`
-- [ ] 🚨 **CRITICAL**: Understood that MCP tools provide LOW-LEVEL analysis, NOT preset check execution
-- [ ] 🚨 **CRITICAL**: Executed MCP analysis EVEN IF PR has no file changes (Phase 2 is MANDATORY)
-- [ ] ✅ Phase 1: Read and parsed `recce.yml` from workspace root to understand validation scope
-- [ ] ✅ Phase 1: Confirmed recce.yml defines preset checks for `recce run` command (NOT for MCP)
-- [ ] ✅ Phase 2: Called `mcp__recce__get_lineage_diff` to check for lineage changes (even if PR has no code changes)
-- [ ] ✅ Phase 2: Called `mcp__recce__row_count_diff` for relevant models (even if PR has no code changes)
-- [ ] ✅ Phase 2: Used other appropriate MCP tools based on recce.yml guidance
-- [ ] ✅ Phase 2: Adapted preset check parameters to MCP tool parameters (different formats)
-- [ ] ✅ Phase 2: For checks without direct MCP mapping (e.g., value_diff), constructed equivalent analysis
-- [ ] ✅ Phase 3: Analyzed MCP results and determined if anomalies exist
-- [ ] ✅ Phase 3: Chose correct output format (brief success OR full validation summary)
-- [ ] ✅ Phase 4: Checked if latest @claude comment has additional instructions beyond "@claude"
-- [ ] ✅ Phase 4: If yes, addressed user's additional request AFTER analysis in separate section
-- [ ] ✅ Validation: All concrete values from actual Recce MCP results (no placeholders)
-- [ ] ✅ Validation: If using full format, verified against Output Validation Checklist
+- [ ] ✅ Get PR information via `gh pr view`
+- [ ] ✅ Analyze Git changes with `git diff`
+- [ ] ✅ Identify modified `.sql` files in `models/` directory
+- [ ] ✅ Categorize changes by model type/directory
+- [ ] ✅ Provide qualitative impact assessment
+- [ ] ✅ Output MS1 response format
+- [ ] ✅ Recommend MS2/MS3 for deeper analysis
+
+### MS2 Checklist (+ dbt Metadata)
+
+- [ ] ✅ Read and parse `recce.yml` to understand validation scope
+- [ ] ✅ Call `mcp__recce__get_lineage_diff` to get lineage changes
+- [ ] ✅ Analyze downstream dependencies and impact radius
+- [ ] ✅ Detect breaking changes (removed models, schema changes)
+- [ ] ✅ Cross-reference with recce.yml preset checks
+- [ ] ✅ Suggest validation checks based on lineage and impact
+- [ ] ✅ Prioritize checks by risk level
+- [ ] ✅ Output MS2 response format
+- [ ] ✅ Recommend MS3 for actual data validation
+
+### MS3 Checklist (+ Data Diffs)
+
+- [ ] ✅ Read and parse `recce.yml` from workspace root
+- [ ] ✅ Confirmed recce.yml defines preset checks for `recce run` command (NOT for MCP)
+- [ ] ✅ Called `mcp__recce__get_lineage_diff` to check for lineage changes
+- [ ] ✅ Called `mcp__recce__row_count_diff` for relevant models
+- [ ] ✅ Used other appropriate MCP tools based on recce.yml guidance
+- [ ] ✅ Adapted preset check parameters to MCP tool parameters (different formats)
+- [ ] ✅ For checks without direct MCP mapping (e.g., value_diff), constructed equivalent analysis
+- [ ] ✅ Analyzed MCP results and determined if anomalies exist
+- [ ] ✅ Chose correct output format (brief success OR full validation summary)
+- [ ] ✅ If using full format, verified against Output Validation Checklist
+
+**🚨 CRITICAL for MS3**: Execute MCP analysis EVEN IF PR has no file changes (data validation is MANDATORY)
+
+---
 
 ## 🚫 Common Mistakes to Avoid
 
-1. **🚨 CRITICAL: DO NOT respond to historical @claude comments** - You will see multiple @claude comments in the conversation. ONLY the latest one matters!
-2. **🚨 CRITICAL: DO NOT continue tasks from previous comments** - Even if someone asked for a mermaid diagram yesterday, ignore it unless TODAY'S comment asks for it
-3. **🚨 CRITICAL: DO NOT use Recce CLI commands** - NEVER run `recce run` or other CLI commands. ONLY use MCP tools (`mcp__recce__*`)
-4. **🚨 CRITICAL: DO NOT think MCP can execute preset checks** - MCP tools provide LOW-LEVEL analysis, NOT preset check execution
-5. **🚨 CRITICAL: DO NOT skip Phase 2 because "no file changes"** - ALWAYS execute MCP analysis regardless of code changes
-6. **DO NOT skip reading `recce.yml`** - this is the first mandatory step to understand validation scope
-7. **DO NOT try to directly execute preset checks with MCP** - use recce.yml as REFERENCE, then use MCP tools for equivalent analysis
-8. **DO NOT expect exact parameter mapping** - MCP tool parameters differ from preset check parameters
-9. **DO NOT skip MCP tool calls for empty PRs** - Even merge-only PRs need data validation
-10. **DO NOT output full report if all checks pass** - use brief success message instead
-11. **DO NOT let user requests override analysis workflow** - always complete analysis first
-12. **DO NOT use placeholder values** - all data must come from actual MCP tool results
+### Tool Usage Mistakes
 
-## Example Execution Flow
+1. **🚨 DO NOT use Recce CLI commands** - NEVER run `recce run`. ONLY use MCP tools (`mcp__recce__*`)
+2. **🚨 DO NOT think MCP can execute preset checks** - MCP tools provide LOW-LEVEL analysis, NOT preset check execution
+3. **DO NOT expect exact parameter mapping** - MCP tool parameters differ from preset check parameters
 
-**Scenario A: All Analysis Pass (PR with No File Changes)**
-```
-0. 🚨 Context Check: Latest @claude comment is just "@claude" from Oct 31
-1. ✅ Ignore all historical requests
-2. Phase 1: Read recce.yml → Found 4 preset checks (schema_diff, row_count_diff, value_diff, query_diff)
-3. ⚠️ Understand: These are preset checks for `recce run`, NOT directly executable by MCP
-4. 🚨 PR Analysis: This PR has NO file changes (only merge commits)
-5. 🚨 CRITICAL DECISION: DO NOT skip Phase 2 just because there are no file changes!
-6. Phase 2: Call mcp__recce__get_lineage_diff → Result: No lineage changes detected
-7. Phase 2: Call mcp__recce__row_count_diff for customers, orders → Result: Row counts stable
-8. Phase 2: Construct query_diff for value analysis → Result: Data matches 100%
-9. Phase 3: All MCP analyses passed, no anomalies
-10. Output: "✅ All Recce analyses completed. No anomalies detected."
-11. Phase 4: Check latest comment for additional requests → None
-12. Done
-```
+### Analysis Mistakes
 
-**Scenario B: PR with File Changes and Anomaly Detected**
+4. **🚨 DO NOT skip analysis because "no file changes"** (MS3 only) - ALWAYS execute MCP analysis regardless of code changes
+5. **DO NOT skip reading `recce.yml`** (MS2/MS3) - this is the first mandatory step to understand validation scope
+6. **DO NOT try to directly execute preset checks with MCP** - use recce.yml as REFERENCE, then use MCP tools for equivalent analysis
+7. **DO NOT skip MCP tool calls for empty PRs** - Even merge-only PRs need data validation
+
+### Output Mistakes
+
+8. **DO NOT output full report if all checks pass** (MS3) - use brief success message instead
+9. **DO NOT use placeholder values** - all data must come from actual tool results
+10. **DO NOT exceed milestone capabilities** - MS1 cannot analyze lineage, MS2 cannot execute data diffs
+
+---
+
+## Example Execution Flows
+
+### MS1 Example: Git Analysis Only
+
 ```
-0. 🚨 Context Check: Latest @claude comment from Oct 31
-1. Phase 1: Read recce.yml → Found 4 preset checks
-2. PR Analysis: This PR modifies customers.sql and orders.sql
-3. Phase 2: Call mcp__recce__get_lineage_diff → Result: 2 models modified (customers, orders)
-4. Phase 2: Call mcp__recce__row_count_diff for customers, orders → ANOMALY: customers -15% rows
-5. Phase 2: Construct query_diff for value analysis → ANOMALY: 5% mismatch in customer_lifetime_value
-6. Phase 2: Call query_diff with recce.yml template → ANOMALY: avg revenue variance -32.1%
-7. Phase 3: Multiple anomalies detected
-8. Output: Full PR Validation Summary with detailed findings
-9. Phase 4: Check latest comment → User asks "also check SQL performance"
-10. Add "## 📎 Additional Analysis" section with SQL performance check
-11. Done
+1. Get PR info via gh pr view
+2. Run git diff to find changed files
+3. Identify modified models:
+   - models/staging/stg_customers.sql
+   - models/marts/customers.sql
+4. Categorize: 1 staging, 1 marts model
+5. Assess impact: Medium (affects marts layer)
+6. Output MS1 format with model list
+7. Recommend MS2 for lineage analysis
 ```
 
-**Scenario C: Historical Mermaid Request (Should be IGNORED)**
-```
-0. 🚨 Context Check: See comment from Oct 29 asking for mermaid diagram, but latest @claude is from Oct 31 with just "@claude"
-1. ✅ Ignore the mermaid request from Oct 29 - it's historical!
-2. Phase 1: Read recce.yml → Found 4 preset checks
-3. 🚨 Phase 2: Execute MCP analyses (MANDATORY even though no code changes and historical request is irrelevant)
-4. Phase 2: Call mcp__recce__get_lineage_diff, mcp__recce__row_count_diff, etc.
-5. Phase 3: Determine output based on MCP results
-6. Phase 4: No additional requests in latest comment
-7. Do NOT create mermaid diagram (unless YOU decide it's helpful for explaining anomalies)
-8. Done
-```
+### MS2 Example: Lineage Analysis
 
-**Scenario D: ❌ WRONG - Responding to Historical Comment (ANTI-PATTERN)**
 ```
-❌ INCORRECT BEHAVIOR:
-0. See multiple @claude comments:
-   - Oct 29 08:00: "@claude create a mermaid diagram"
-   - Oct 30 10:00: "@claude check security issues"
-   - Oct 31 09:00: "@claude"
-1. ❌ WRONG: "I see you want a mermaid diagram and security check, let me do both"
-2. ❌ WRONG: Agent creates mermaid diagram (responding to Oct 29 comment)
-3. ❌ WRONG: Agent performs security check (responding to Oct 30 comment)
-4. ❌ WRONG: Skips Recce MCP analysis
-5. ❌ RESULT: Completely wrong output, user confused
-
-✅ CORRECT BEHAVIOR:
-0. 🚨 STEP 0: Scan all comments and identify latest = Oct 31 09:00 "@claude"
-1. ✅ CORRECT: Latest comment is just "@claude" with no additional instructions
-2. ✅ CORRECT: Ignore Oct 29 mermaid request (historical)
-3. ✅ CORRECT: Ignore Oct 30 security request (historical)
-4. Phase 1: Read recce.yml
-5. Phase 2: Execute MCP analyses (default workflow)
-6. Phase 3: Output validation summary
-7. Phase 4: No additional requests in latest comment
-8. Done - correct behavior
+1. Read recce.yml → Found 4 preset checks
+2. Call mcp__recce__get_lineage_diff
+   → Result: 2 models modified, 8 downstream dependencies
+3. Analyze impact:
+   - customers: 5 downstream models
+   - orders: 3 downstream models
+4. Check recce.yml coverage:
+   - row_count_diff covers both models ✅
+   - query_diff covers customers ✅
+5. Suggest additional checks:
+   - profile_diff for customer_lifetime_value
+6. Output MS2 format with lineage and suggestions
+7. Recommend MS3 for data validation
 ```
 
-**Scenario E: Multiple @claude Mentions - Find the Latest**
+### MS3 Example: Full Data Validation
+
 ```
-0. 🚨 STEP 0: Scan comments for ALL @claude mentions:
-   - [user1 at 2025-10-29T08:00:00Z]: "@claude analyze customers"
-   - [user2 at 2025-10-30T14:30:00Z]: "@claude check row counts only"
-   - [claude at 2025-10-30T14:35:00Z]: "Analysis complete..." (this is bot response, IGNORE)
-   - [user1 at 2025-10-31T10:00:00Z]: "@claude"
-
-1. 🚨 STEP 0: Compare timestamps:
-   - 2025-10-31T10:00:00Z is the most recent
-
-2. ✅ Latest human @claude comment: Oct 31 10:00 "@claude" (no additional instructions)
-
-3. ❌ Ignore Oct 29 "analyze customers" request
-4. ❌ Ignore Oct 30 "check row counts only" request
-5. ❌ Ignore Oct 30 claude[bot] response (not a user request)
-
-6. ✅ Execute default workflow (Phase 1-4)
-7. Done
+1. Read recce.yml → Found 4 preset checks
+2. Call mcp__recce__get_lineage_diff
+   → Result: 2 models modified
+3. Call mcp__recce__row_count_diff(node_names=["customers", "orders"])
+   → Result: customers -15% rows (ANOMALY!)
+4. Construct query_diff for value analysis
+   → Result: 5% mismatch in customer_lifetime_value
+5. Call query_diff with recce.yml template
+   → Result: avg revenue variance -32.1% (ANOMALY!)
+6. Determine: Multiple anomalies detected
+7. Output: Full PR Validation Summary
+8. Include: Concrete metrics, severity indicators, recommendations
 ```
 
-REMEMBER:
-- 🚨 **Context isolation is CRITICAL** - Always start by identifying the LATEST @claude comment
-- 🚨 **Historical noise** - You WILL see old requests. Ignore them completely!
-- 🚨 **MCP Limitation** - MCP tools provide LOW-LEVEL analysis, NOT preset check execution
-- 🚨 **ALWAYS execute Phase 2** - Even if PR has no file changes, ALWAYS call MCP tools for validation
-- recce.yml defines validation scope → Use MCP tools for equivalent analysis → Analyze results → Choose output format → Handle CURRENT user request
-- MCP analysis is mandatory (Phase 2), current user requests are additive (Phase 4)
-- Use Mermaid if YOU think it helps OR if CURRENT comment asks for it
+### MS3 Example: All Checks Pass
+
+```
+1. Read recce.yml
+2. Execute all MCP analyses
+3. Results: All metrics within thresholds
+4. Output: "✅ All Recce preset checks passed. No anomalies detected."
+```
+
+---
+
+## Tool Availability by Milestone
+
+### MS1: Git/PR Only
+- ✅ `Read(*)` - Any files
+- ✅ `Bash(gh pr view *)` - GitHub CLI
+- ✅ `Bash(git *)` - Git commands
+- ❌ NO Recce MCP tools
+- ❌ NO dbt artifacts
+
+### MS2: + dbt Metadata
+- ✅ All MS1 tools
+- ✅ `Bash(recce)` - Verification only
+- ✅ `mcp__recce__get_lineage_diff` - Lineage analysis ONLY
+- ❌ NO data diff tools (row_count, query, profile)
+
+### MS3: + Data Diffs
+- ✅ All MS2 tools
+- ✅ `mcp__recce__row_count_diff` - Row count comparison
+- ✅ `mcp__recce__query` - Execute SQL queries
+- ✅ `mcp__recce__query_diff` - Compare query results
+- ✅ `mcp__recce__profile_diff` - Statistical profiles
+
+---
+
+## Key Reminders
+
+- **Milestone Focus**: Stay within your milestone's capabilities
+- **Tool Restrictions**: Only use tools explicitly allowed for your milestone
+- **recce.yml**: Use as REFERENCE, not for direct execution
+- **MCP vs CLI**: Always use MCP tools, never CLI commands (except verification)
+- **Concrete Values**: No placeholders - only actual data from tool results
+- **Empty PRs**: MS3 MUST still execute data validation (catches non-code issues)
+- **Output Format**: Follow the exact format template for your milestone
