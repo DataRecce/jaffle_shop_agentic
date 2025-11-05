@@ -177,11 +177,12 @@ jobs:
           # Trim whitespace from comment body
           COMMENT_BODY_TRIMMED=$(echo "$COMMENT_BODY" | xargs)
           
-          # Prepare prompt: if comment is just "@claude" or empty, use default prompt
+          # Prepare prompt: if comment is just "@claude" or empty, don't override prompt
+          # Let Claude action use its default behavior
           if [ "$COMMENT_BODY_TRIMMED" = "@claude" ] || [ -z "$COMMENT_BODY_TRIMMED" ]; then
-            PROMPT_TEXT="/review"
-            echo "prompt_text=$PROMPT_TEXT" >> $GITHUB_OUTPUT
+            echo "use_default_prompt=true" >> $GITHUB_OUTPUT
           else
+            echo "use_default_prompt=false" >> $GITHUB_OUTPUT
             echo "prompt_text=$COMMENT_BODY" >> $GITHUB_OUTPUT
           fi
           
@@ -370,9 +371,8 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          # Use processed prompt from system-prompt step
-          # If comment is just "@claude" or empty, uses "/review-pr" as default
-          prompt: ${{ steps.system-prompt.outputs.prompt_text || github.event.comment.body }}
+          # Only set prompt for milestone commands, otherwise let Claude use default behavior
+          prompt: ${{ steps.system-prompt.outputs.use_default_prompt != 'true' && steps.system-prompt.outputs.prompt_text || '' }}
 
           # This is an optional setting that allows Claude to read CI results on PRs
           additional_permissions: |
@@ -381,7 +381,7 @@ jobs:
           # Configure Recce MCP tools via claude_args
           # 
           # Milestone-Based Tool Access:
-          # - Default (@claude): General PR review, no system prompt, no Recce tools
+          # - Default (@claude): General PR review, uses Claude action's default behavior (no custom args)
           # - MS1 (/ms1): Git/PR context only - GitHub CLI, Git commands
           # - MS2 (/ms2): + dbt metadata - lineage_diff MCP tool only
           # - MS3 (/ms3): + data diffs - all Recce MCP tools
@@ -393,11 +393,13 @@ jobs:
           # 3. query: Execute SQL query on specified environment (supports Jinja templates)
           # 4. query_diff: Compare SQL query results between base and current
           # 5. profile_diff: Compare statistical profiles (min/max/avg/distinct count)
+          #
+          # For default @claude: don't pass any custom args to preserve default behavior
           claude_args: |
-            --mcp-config .github/mcp_config.json
-            --max-turns 50
+            ${{ steps.system-prompt.outputs.milestone == 'default' && '' || '--mcp-config .github/mcp_config.json' }}
+            ${{ steps.system-prompt.outputs.milestone == 'default' && '' || '--max-turns 50' }}
             ${{ steps.system-prompt.outputs.has_system_prompt == 'true' && format('--system-prompt-file {0}', steps.system-prompt.outputs.prompt_file) || '' }}
             ${{ steps.system-prompt.outputs.milestone == 'ms1' && '--allowedTools "Read(*),Bash(gh pr view *),Bash(gh pr diff *),Bash(git diff *),Bash(git log *),Bash(git show *)"' || '' }}
             ${{ steps.system-prompt.outputs.milestone == 'ms2' && '--allowedTools "Read(recce.yml),Read(*.yml),Read(*.sql),Bash(gh pr view *),Bash(recce mcp-server),Bash(recce version),mcp__recce__get_lineage_diff"' || '' }}
             ${{ steps.system-prompt.outputs.milestone == 'ms3' && '--allowedTools "Read(recce.yml),Read(*.yml),Read(*.sql),Bash(recce),Bash(recce mcp-server),Bash(gh pr view *),Bash(jq *),mcp__recce__get_lineage_diff,mcp__recce__row_count_diff,mcp__recce__query,mcp__recce__query_diff,mcp__recce__profile_diff"' || '' }}
-            --debug
+            ${{ steps.system-prompt.outputs.milestone == 'default' && '' || '--debug' }}
