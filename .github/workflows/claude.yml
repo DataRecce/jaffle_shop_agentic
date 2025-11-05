@@ -31,17 +31,17 @@ jobs:
         with:
           # Python 3.10 is used for compatibility with Recce and dbt-core
           # Recce requires Python 3.9+ per its setup.py
-          python-version: '3.10'
+          python-version: '3.13'
 
       - name: Cache Python dependencies
         uses: actions/cache@v4
         with:
           path: |
             ~/.cache/pip
-            ~/.local/lib/python3.10/site-packages
-          key: pip-recce-nightly-${{ runner.os }}-py3.10-${{ hashFiles('requirements.txt') }}
+            ~/.local/lib/python3.13/site-packages
+          key: pip-recce-nightly-${{ runner.os }}-py3.13-${{ hashFiles('requirements.txt') }}
           restore-keys: |
-            pip-recce-nightly-${{ runner.os }}-py3.10-
+            pip-recce-nightly-${{ runner.os }}-py3.13-
             pip-recce-nightly-
 
       - name: Cache dbt packages
@@ -81,7 +81,7 @@ jobs:
           name: dbt-artifacts-current-${{ steps.pr-info-artifacts.outputs.pr_number }}
           path: target/
           github_token: ${{ github.token }}
-          workflow: dbt-build-artifacts.yml
+          workflow: dbt-build-pr.yml
           pr: ${{ steps.pr-info-artifacts.outputs.pr_number }}
           check_artifacts: true
           search_artifacts: true

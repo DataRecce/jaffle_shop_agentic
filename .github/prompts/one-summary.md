@@ -13,7 +13,7 @@ When analyzing a dbt Pull Request, you MUST structure your response with the fol
 >> **Note** compare the time between these 2 environments and provide status, 🔴 if date diff >= 1 day, ⚠  if date diff < 1 day and > 4 hours,  ✅ if date diff <= 4 hours
 - 🔴 the date diff is **X** hours, please check your data
 - ⚠ the date diff is  **X** hours, be aware of the potential issue
-- ✅ the data diff is  **X** mintues
+- ✅ the data diff is  **X** minutes
 
 ---
 
@@ -48,25 +48,25 @@ Lineage Diff
 ---
 ## [REQUIRED] ✅ Checks Summary
 
-> **Note**: Read recce.yml to get what to test, the status can be like below exmaples. Show action links that users can click to lauch the check in Recce for each check
+> **Note**: Read recce.yml to get what to test, the status can be like below exmaples. Show action links that users can click to launch the check in Recce for each check
 
 **Preset check results:**
 - ✅ Schema validation: **N columns added/modified/removed** [See in Recce](link to launch this check in Recce)
 - ✅ Row count validation: **all stable** / specific changes noted [See in Recce](link to launch this check in Recce)
 - ⚠ Profile threshold exceeded: **>X% change in [metric]** [See in Recce](link to launch this check in Recce)
   
-> **Note**: Based on your understanding, call out the highest risk that users should check as suggsted checks with reason briefly. If you can do the checks with MCP, then provide the result. If not, still write the suggested validation.Show action links that users can click to lauch the check in Recce for each check
+> **Note**: Based on your understanding, call out the highest risk that users should check as suggsted checks with reason briefly. If you can do the checks with MCP, then provide the result. If not, still write the suggested validation.Show action links that users can click to launch the check in Recce for each check
 **Suggested checks:**
 - ✅ Profile diff in `model.column_name` and the result is no change. [See in Recce](link to launch this check in Recce)
 - ⚠  Row counts diff in `model.column_name` and see **>X% change in [metric]** [See in Recce](link to launch this check in Recce)
 - ❌ Critical failures: (if any) [See in Recce](link to launch this check in Recce)
 
-**[Lauch Recce](link to launch this PR in Recce)**
+**[Launch Recce](link to launch this PR in Recce)**
 
 ---
 
 ## [OPTIONAL] 📊 Validation Results
-> **Note**: Show the diff section based oon the result from preset check results and suggested checks result. Show the restuls when they are ⚠  or ❌. Skip the section if it's ✅.
+> **Note**: Show the diff section based on the result from preset check results and suggested checks result. Show the results when they are ⚠  or ❌. Skip the section if it's ✅.
 
 
 ### Schema Diff

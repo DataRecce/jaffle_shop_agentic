@@ -12,15 +12,13 @@ jobs:
     permissions:
       contents: read
     env:
-      # Default to DuckDB if DB_TYPE is not set
-      DB_TYPE: ${{ vars.DB_TYPE || 'duckdb' }}
       DBT_BASE_TARGET: "prod"
-      # Snowflake credentials (only used if DB_TYPE == 'snowflake')
-      SNOWFLAKE_ACCOUNT: ${{ vars.DB_TYPE == 'snowflake' && secrets.SNOWFLAKE_ACCOUNT || '' }}
-      SNOWFLAKE_USER: ${{ vars.DB_TYPE == 'snowflake' && secrets.SNOWFLAKE_USER || '' }}
-      SNOWFLAKE_PASSWORD: ${{ vars.DB_TYPE == 'snowflake' && secrets.SNOWFLAKE_PASSWORD || '' }}
-      SNOWFLAKE_ROLE: ${{ vars.DB_TYPE == 'snowflake' && secrets.SNOWFLAKE_ROLE || 'RECCE' }}
-      SNOWFLAKE_SCHEMA: ${{ vars.DB_TYPE == 'snowflake' && 'PUBLIC' || '' }}
+      # Snowflake credentials
+      SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+      SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+      SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
+      SNOWFLAKE_ROLE: ${{ secrets.SNOWFLAKE_ROLE || 'RECCE' }}
+      SNOWFLAKE_SCHEMA: "PUBLIC"
 
     steps:
       - name: Checkout repository
@@ -31,18 +29,18 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: "3.10"
+          python-version: "3.13"
 
       - name: Cache Python dependencies
         uses: actions/cache@v4
         with:
           path: |
             ~/.cache/pip
-            ~/.local/lib/python3.10/site-packages
-          key: pip-dbt-base-${{ runner.os }}-py3.10-${{ env.DB_TYPE }}-${{ hashFiles('requirements.txt') }}
+            ~/.local/lib/python3.13/site-packages
+          key: pip-dbt-base-${{ runner.os }}-py3.13-snowflake-${{ hashFiles('requirements.txt') }}
           restore-keys: |
-            pip-dbt-base-${{ runner.os }}-py3.10-${{ env.DB_TYPE }}-
-            pip-dbt-base-${{ runner.os }}-py3.10-
+            pip-dbt-base-${{ runner.os }}-py3.13-snowflake-
+            pip-dbt-base-${{ runner.os }}-py3.13-
 
       - name: Cache dbt packages
         uses: actions/cache@v4
@@ -64,13 +62,9 @@ jobs:
 
       - name: Display database configuration
         run: |
-          echo "::notice::Database Type: ${{ env.DB_TYPE }}"
+          echo "::notice::Database Type: Snowflake"
           echo "::notice::Target: ${{ env.DBT_BASE_TARGET }}"
-          if [ "${{ env.DB_TYPE }}" == "snowflake" ]; then
-            echo "::notice::Using Snowflake with schema: ${{ env.SNOWFLAKE_SCHEMA }}"
-          else
-            echo "::notice::Using DuckDB (default)"
-          fi
+          echo "::notice::Schema: ${{ env.SNOWFLAKE_SCHEMA }}"
 
       - name: Build dbt Base environment
         id: build-base
@@ -106,22 +100,14 @@ jobs:
           retention-days: 30
           if-no-files-found: error
 
-      - name: Upload DuckDB database
-        if: env.DB_TYPE == 'duckdb'
-        uses: actions/upload-artifact@v4
-        with:
-          name: duckdb-base-main
-          path: jaffle_shop.duckdb
-          retention-days: 30
-          if-no-files-found: warn
-
       - name: Summary
         if: always()
         run: |
           echo "## dbt Base Build Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Branch:** main" >> $GITHUB_STEP_SUMMARY
-          echo "**Database Type:** ${{ env.DB_TYPE }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Database Type:** Snowflake" >> $GITHUB_STEP_SUMMARY
+          echo "**Schema:** ${{ env.SNOWFLAKE_SCHEMA }}" >> $GITHUB_STEP_SUMMARY
           echo "**Target:** ${{ env.DBT_BASE_TARGET }}" >> $GITHUB_STEP_SUMMARY
           echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
