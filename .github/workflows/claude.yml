@@ -361,7 +361,8 @@ jobs:
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           # Use comment body as prompt if provided, otherwise use action's default prompt
-          prompt: ${{ github.event.comment.body || '/review' }}
+          # If comment is just "@claude" (with optional whitespace), use default prompt
+          prompt: ${{ (trim(github.event.comment.body) == '@claude' || github.event.comment.body == '') && '/review-pr' || github.event.comment.body }}
 
           # This is an optional setting that allows Claude to read CI results on PRs
           additional_permissions: |
