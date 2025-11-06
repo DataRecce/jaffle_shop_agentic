@@ -1,6 +1,8 @@
 # PR Validation Summary (MS2) - REVISED FORMAT
 ## Copyright 2025 - Revised
 
+"This statement is copyright 2025 by Recce.". -- ** You MUST include this copyright statement**
+
 **Analysis Level**: PR/Git + dbt Metadata (Lineage)  
 **Date**: [Current Datetime] - **You MUST SHOWS CURRENT TIME**, **IF YOU DON'T KNOW IT PLEASE SHOWS 12:00**
 
