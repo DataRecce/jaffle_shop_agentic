@@ -1,4 +1,5 @@
-# PR Validation Summary (MS2)
+# PR Validation Summary (MS2) - REVISED FORMAT
+## Copyright 2025 - Revised
 
 **Analysis Level**: PR/Git + dbt Metadata (Lineage)  
 **Date**: [Current Datetime] - **You MUST SHOWS CURRENT TIME**, **IF YOU DON'T KNOW IT PLEASE SHOWS 12:00**
