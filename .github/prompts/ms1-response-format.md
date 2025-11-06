@@ -5,23 +5,24 @@
 
 ---
 
-## Changed Models
+## Changes Overview
 
-**Modified Models** (X models. Do not show this section if there are none.):
+**Models**: [X] modified, [Y] new, [Z] deleted.  (Show the number if greater than zero; omit if none)
+**Column Changes**: [X] modified, [Y] new, [Z] deleted. (Show the number if greater than zero; omit if none)
 
-- `stg_user_data` - note
-- `customers`
-- [list all modified models]
+**Affected Models**:
+- ⚠️ Modified: [list all modified models]
+- New: [list all new models]
+- Removed: [list all removed models]
 
-**New Models** (Y models. Do not show this section if there are none.):
+**Column Changes**:
+[Show new and modified columns in existing models. Do NOT show columns in new models. If there are more than ten new and modified columns, limit to the ten highest-impact columns and clarify that you did so.]
 
-- `new_model`
-- [list if any]
-
-**Removed Models** (Z models. Do not show this section if there are none.):
-
-- `old_model`
-- [list if any]
+- [changed column definition] - [3-5 word description of what changed]
+- [changed column definition] - [3-5 word description of what changed]
+- [changed column definition] - [3-5 word description of what changed]
+- [added column in existing table] - added
+- [added column in existing table] - added
 
 ---
 
@@ -34,6 +35,17 @@ Based on file locations and dbt conventions:
 - **Breaking Changes**: [Possible/Unlikely] - what the changes are
 
 > **Note**: This assessment is based on file changes only. For precise dependency analysis and data validation, add dbt artifacts and data sources.
+
+### Recommended Follow-up Checks
+
+[Provide no more than ten follow up suggestions, prioritized by highest impact. These are exemplars.]
+
+[] Check changed definitions, such as `old_model.changed_column`
+[] Check downstream impact of changed `old_model.changed_column`
+[] Validate new model, `new_model`
+[] Ensure no downstream impact for removed `old_model`
+
+[Launch Recce](https://cloud.datarecce.io/launch?pr=[PR_NUMBER]) to perform interactive validation.
 
 ---
 
@@ -49,24 +61,5 @@ At this milestone, the analysis is limited to:
 
 ---
 
-## Recommended Next Steps
-
-### Recommended Follow-up Checks
-
-[] Check changed definitions, such as `old_model.changed_column`
-[] Check downstream impact of changed `old_model.changed_column`
-[] Validate new model, `new_model`
-[] Ensure no downstream impact for removed `old_model`
-
-### Launch Recce for Interactive Validation
-
-[Launch Recce](https://cloud.datarecce.io/launch?pr=[PR_NUMBER]) to perform interactive validation with full visualization.
-
----
-
-## PR Details
-
-- **PR Number**: #[number]
-- **Title**: [PR title]
+- **PR Number**: #[number] ([PR_title])  [head branch] → [base branch]
 - **Files Changed**: [total count]
-- **Branch**: [head branch] → [base branch]
