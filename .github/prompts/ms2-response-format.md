@@ -2,6 +2,7 @@
 
 **Analysis Level**: PR/Git + dbt Metadata (Lineage)  
 **Date**: [Current Date]
+**Week**: [Current Week date]
 
 ---
 
