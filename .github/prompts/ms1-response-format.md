@@ -5,56 +5,54 @@
 
 ---
 
-## Changed Models
+## Changes Overview
 
-**Modified Models** (X files):
-- `models/staging/stg_customers.sql`
-- `models/marts/customers.sql`
-- [list all modified .sql files]
+**Models**: [X] modified, [Y] new, [Z] deleted.  (Show the number if greater than zero; omit if none)
+**Column Changes**: [X] modified, [Y] new, [Z] deleted. (Show the number if greater than zero; omit if none)
 
-**New Models** (Y files):
-- `models/marts/new_model.sql`
-- [list if any]
+**Affected Models**:
+- ⚠️ Modified: [list all modified models]
+- New: [list all new models]
+- Removed: [list all removed models]
 
-**Removed Models** (Z files):
-- `models/deprecated/old_model.sql`
-- [list if any]
+**Column Changes**:
+[Show new and modified columns in existing models. Do NOT show columns in new models. If there are more than ten new and modified columns, limit to the ten highest-impact columns and clarify that you did so.]
 
-**Other Changes**:
-- Schema files modified: [list .yml files if any]
-- Configuration changes: [packages.yml, dbt_project.yml if modified]
-
----
-
-## Change Breakdown by Layer
-
-### Staging Models
-- X models modified
-- Focus: [brief description of changes]
-
-### Marts Models
-- Y models modified
-- Focus: [brief description of changes]
-
-### Other Layers
-- [if applicable]
+- [changed column definition] - [3-5 word description of what changed]
+- [changed column definition] - [3-5 word description of what changed]
+- [changed column definition] - [3-5 word description of what changed]
+- [added column in existing table] - added
+- [added column in existing table] - added
 
 ---
 
 ## Potential Impact (Qualitative Assessment)
 
 Based on file locations and dbt conventions:
+
 - **Scope**: [Wide/Medium/Narrow] - affects [staging/marts/specific area]
 - **Risk Level**: [High/Medium/Low] - based on number of models and model types
-- **Breaking Changes**: [Possible/Unlikely] - note if schema files also modified
+- **Breaking Changes**: [Possible/Unlikely] - what the changes are
 
-> **Note**: This assessment is based on file changes only. For precise dependency analysis and data validation, use `/ms2` (with dbt metadata) or `/ms3` (with full data diff).
+> **Note**: This assessment is based on file changes only. For precise dependency analysis and data validation, add dbt artifacts and data sources.
+
+### Recommended Follow-up Checks
+
+[Provide no more than ten follow up suggestions, prioritized by highest impact. These are exemplars.]
+
+[] Check changed definitions, such as `old_model.changed_column`
+[] Check downstream impact of changed `old_model.changed_column`
+[] Validate new model, `new_model`
+[] Ensure no downstream impact for removed `old_model`
+
+[Launch Recce](https://cloud.datarecce.io/launch?pr=[PR_NUMBER]) to perform interactive validation.
 
 ---
 
 ## Limitations of MS1 Analysis
 
 At this milestone, the analysis is limited to:
+
 - ✅ Identifying which models changed (from Git diff)
 - ✅ Categorizing changes by directory structure
 - ❌ Cannot analyze downstream dependencies (requires dbt lineage metadata)
@@ -63,30 +61,5 @@ At this milestone, the analysis is limited to:
 
 ---
 
-## Recommended Next Steps
-
-### For Deeper Analysis
-
-1. **Run MS2 Analysis** (`@claude /ms2`):
-   - Requires: dbt artifacts (manifest.json, catalog.json)
-   - Provides: Lineage diff, downstream impact, breaking change detection
-   - Suggests: Preset checks based on recce.yml
-
-2. **Run MS3 Analysis** (`@claude /ms3`):
-   - Requires: MS2 + data warehouse connection
-   - Provides: Row count diffs, profile diffs, value changes
-   - Quantifies: Actual data impact with metrics
-
-### Launch Recce for Interactive Validation
-
-[Launch Recce](https://cloud.datarecce.io/launch?pr=[PR_NUMBER]) to perform interactive validation with full visualization.
-
----
-
-## PR Details
-
-- **PR Number**: #[number]
-- **Title**: [PR title]
+- **PR Number**: #[number] ([PR_title])  [head branch] → [base branch]
 - **Files Changed**: [total count]
-- **Branch**: [head branch] → [base branch]
-
