@@ -6,12 +6,15 @@ with daily_orders as (
         order_date,
         customer_id,
         count(*) as order_count,
-        sum(amount) as total_amount
+        sum(amount) as total_amount,
+        avg(amount) as avg_order_amount
 
     from {{ ref('orders') }}
 
+    where order_date >= '2021-06-01'
+
     {% if is_incremental() %}
-    where order_date > (select max(order_date) from {{ this }})
+    and order_date > (select max(order_date) from {{ this }})
     {% endif %}
 
     group by order_date, customer_id
