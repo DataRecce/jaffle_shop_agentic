@@ -1,0 +1,32 @@
+version: 2
+
+models:
+  - name: report_daily_sales
+    description: "Daily sales report aggregation"
+    columns:
+      - name: order_date
+        description: "Date of orders"
+      - name: total_orders
+        description: "Total number of orders"
+      - name: total_revenue
+        description: "Total revenue for the day"
+
+  - name: report_weekly_performance
+    description: "Weekly KPI dashboard with week-over-week comparisons for executive reporting"
+    columns:
+      - name: week_start
+        description: "First day of the week"
+      - name: total_orders
+        description: "Total orders for the week"
+      - name: total_revenue
+        description: "Total revenue for the week"
+      - name: unique_customers
+        description: "Number of unique customers who ordered"
+      - name: revenue_per_customer
+        description: "Average revenue per customer"
+      - name: prev_week_revenue
+        description: "Previous week's total revenue"
+      - name: revenue_wow_change_pct
+        description: "Week-over-week revenue change percentage"
+      - name: orders_wow_change_pct
+        description: "Week-over-week order count change percentage"

@@ -1,0 +1,37 @@
+version: 2
+
+models:
+  - name: monthly_revenue
+    description: Monthly revenue aggregation for trend analysis
+    columns:
+      - name: month
+        description: First day of the month
+      - name: total_revenue
+        description: Sum of all order amounts in the month
+      - name: order_count
+        description: Number of orders in the month
+      - name: avg_order_value
+        description: Average order value for the month
+
+  - name: customer_lifetime_value
+    description: Customer lifetime value analysis with segmentation
+    columns:
+      - name: customer_id
+        description: Unique customer identifier
+      - name: first_order_date
+        description: Date of customer's first order
+      - name: last_order_date
+        description: Date of customer's most recent order
+      - name: total_orders
+        description: Total number of orders placed by customer
+      - name: lifetime_value
+        description: Total amount spent by customer
+      - name: avg_order_value
+        description: Average amount per order
+      - name: customer_lifespan_days
+        description: Days between first and last order
+      - name: customer_segment
+        description: Value segment (high_value, medium_value, low_value)
+        tests:
+          - accepted_values:
+              values: ['high_value', 'medium_value', 'low_value']
