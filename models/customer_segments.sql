@@ -3,6 +3,7 @@ SELECT
     customer_id,
     number_of_orders,
     customer_lifetime_value,
+    1 as record_exists,    
     CASE 
         WHEN number_of_orders > 10 THEN 'Frequent Buyer'
         WHEN number_of_orders BETWEEN 5 AND 10 THEN 'Occasional Buyer'
