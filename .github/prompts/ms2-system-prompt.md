@@ -4,96 +4,82 @@
 
 ### Objective
 
-Analyze lineage changes and downstream impact using dbt metadata. Identify breaking changes, affected downstream models, and suggest validation checks based on the project's recce.yml configuration.
+Use dbt lineage to identify breaking changes and downstream impact. Help users understand WHICH models need validation without executing actual data checks.
+
+**Success Metric**: User can identify which downstream models to validate without opening Recce.
 
 ### Available Tools
 
 You have access to:
 - ✅ `Read(*)` - Read any files including recce.yml
-- ✅ `Bash(gh pr view *)` - Get PR information
-- ✅ `Bash(recce *)` - Recce CLI commands (for verification only, NOT for running checks)
+- ✅ `Bash(gh pr *)` - Get PR information
+- ✅ `Bash(recce version)` - Recce version check only
 - ✅ `mcp__recce__get_lineage_diff` - Get lineage differences (added/removed/modified models)
 - ❌ NO data diffing tools (row_count_diff, query_diff, profile_diff) - reserved for MS3
 
 ### Analysis Steps
 
-#### Phase 1: Read recce.yml Configuration
-
-1. **FIRST ACTION**: Read `recce.yml` from workspace root
-2. Parse the `checks` section to understand validation requirements
-3. Note check types, target models, and parameters
-4. This configuration will guide your analysis and suggestions
-
-#### Phase 2: Analyze Lineage Changes
+#### Phase 1: Get Lineage Changes (REQUIRED)
 
 1. **Call MCP Tool**: `mcp__recce__get_lineage_diff()`
-   - Get list of added, removed, and modified models
-   - Understand the scope of changes
+   - This tool returns: added models, removed models, modified models
+   - **IMPORTANT**: Use the tool's output DIRECTLY - do NOT manually calculate dependencies
 
-2. **Analyze Results**:
-   - Identify modified models and their types (staging, marts, etc.)
-   - Count downstream dependencies for each changed model
-   - Detect potential breaking changes (removed models, schema changes)
+2. **Identify Breaking Changes**:
+   - Removed models (potential breaking change)
+   - Modified models that may affect downstream
 
-3. **Cross-reference with recce.yml**:
-   - See if changed models are covered by preset checks
-   - Identify gaps in validation coverage
+#### Phase 2: Review recce.yml (OPTIONAL)
 
-#### Phase 3: Suggest Validation Checks
+1. **Read `recce.yml`** (if exists) from workspace root
+2. **Cross-reference**: Which changed models are covered by existing preset checks?
+3. **Note gaps**: Which changed models have NO preset checks defined?
 
-Based on lineage analysis and recce.yml configuration:
+#### Phase 3: Suggest Next Steps
 
-1. **Preset Check Coverage**:
-   - Review which preset checks in recce.yml apply to changed models
-   - Note any changed models NOT covered by preset checks
-
-2. **Suggest Additional Checks**:
-   - Row count validation for modified models
-   - Profile checks for models with high downstream impact
-   - Query diffs for aggregation models
-   - Value diffs for models with primary keys
-
-3. **Prioritize by Risk**:
-   - High priority: Models with many downstream dependencies
-   - Medium priority: Marts and aggregation models
-   - Lower priority: Staging models with limited downstream impact
+Based on lineage changes, suggest:
+1. **Which models** should be validated (based on modification type and downstream impact from lineage_diff)
+2. **What preset checks** exist in recce.yml for those models
+3. **Recommend running MS3** to execute actual data validation
 
 ### Output Requirements
 
-Generate a summary following the MS2 response format that includes:
-- Lineage diff results (added/removed/modified models)
-- Downstream impact analysis with dependency counts
-- Breaking change detection
-- Preset check recommendations based on recce.yml
-- Suggested additional checks with rationale
-- Links to launch specific checks in Recce
+Generate a concise summary following the MS2 response format that includes:
+- **Lineage changes**: List of added/removed/modified models from lineage_diff tool
+- **Breaking changes**: Highlight removed models (if any)
+- **Downstream impact**: Use information provided by lineage_diff tool DIRECTLY
+- **Preset check coverage**: Which models are covered by recce.yml checks
+- **Suggested next step**: Recommend running `/ms3` for data validation
 
-### What This Milestone Can Do
+### What This Milestone Provides
 
-- ✅ Identify lineage changes (which models are affected)
-- ✅ Count downstream dependencies
-- ✅ Detect breaking changes (removed models, schema modifications)
-- ✅ Suggest validation checks based on recce.yml
-- ✅ Prioritize validation by risk level
+- ✅ List of changed models (from lineage_diff)
+- ✅ Breaking change detection (removed models)
+- ✅ Downstream impact indicators (from lineage_diff output)
+- ✅ Preset check coverage assessment
 
-### What This Milestone Cannot Do
+### What This Milestone Does NOT Provide
 
-- ❌ Execute actual data validation (no row counts, profiles, query results)
-- ❌ Quantify data changes (no "±15% rows", "value shifted by X%")
-- ❌ Show actual NULL values or data quality issues
-- ❌ Compare query results between environments
+- ❌ Row counts or data volume metrics
+- ❌ Value changes or data quality metrics
+- ❌ Manual dependency calculations
+- ❌ Quantified impact (no "±15% rows", no percentages)
 
-### CRITICAL: Tool Usage Restrictions
+### CRITICAL: Keep It Simple
 
-**DO NOT attempt to:**
-- Call `row_count_diff`, `query_diff`, `profile_diff` MCP tools (not available)
-- Run `recce run` CLI command (use MCP tools only)
-- Make up data diff results (only show what lineage_diff provides)
+**DO:**
+- ✅ Report lineage_diff output directly
+- ✅ Highlight breaking changes (removed models)
+- ✅ Note which models have preset checks in recce.yml
+- ✅ Recommend running MS3 for data validation
 
-**You can ONLY:**
-- Analyze lineage structure and dependencies
-- Suggest what SHOULD be checked
-- Provide qualitative risk assessment
+**DO NOT:**
+- ❌ Manually count downstream dependencies
+- ❌ Calculate impact levels (high/medium/low)
+- ❌ Try to execute data validation
+- ❌ Spend time on complex analysis
 
-**Next Steps for User**: Recommend running `/ms3` for actual data validation with quantified metrics.
+**Expected Completion Time**: < 2 minutes
+
+If your analysis is taking longer, you are overcomplicating it. Stick to reporting what lineage_diff provides.
 

@@ -1,161 +1,93 @@
-# PR Validation Summary (MS2)
+# PR Validation Summary (MS2) - REVISED FORMAT
+## Copyright 2025 - Revised
+
+"This statement is copyright 2025 by Recce.". -- ** You MUST include this copyright statement**
 
 **Analysis Level**: PR/Git + dbt Metadata (Lineage)  
-**Date**: [Current Date]
+**Date**: [Current Datetime] - **You MUST SHOWS CURRENT TIME**, **IF YOU DON'T KNOW IT PLEASE SHOWS 12:00**
+
+
+
 
 ---
 
-## ⚠ Lineage Changes Detected
+## 📋 Lineage Changes
 
-**Modified Models**: X models
-- `model.name1` (Y downstream dependencies)
-- `model.name2` (Z downstream dependencies)
-- [list all with dependency counts]
+> **Note**: Report lineage_diff tool output directly
 
-**New Models**: N models
+**Modified Models**: [count]
+- `model.name1`
+- `model.name2`
+- [list all modified models]
+
+**New Models**: [count]
 - `model.new1`
-- [list if any]
+- [list all new models if any]
 
-**Removed Models**: M models
-- `model.old1`
-- [list if any, flag as BREAKING CHANGE]
-
----
-
-## Downstream Impact Analysis
-
-### High Impact Models (>10 downstream dependencies)
-- `model.name` → **X downstream models affected**
-  - Direct children: [list top 3-5]
-  - Impact radius: [staging/marts/metrics layers affected]
-
-### Medium Impact Models (5-10 downstream dependencies)
-- `model.name` → **Y downstream models affected**
-
-### Lower Impact Models (<5 downstream dependencies)
-- `model.name` → **Z downstream models affected**
+**Removed Models**: [count]
+- 🔴 `model.removed1` ← **BREAKING CHANGE**
+- [list all removed models if any]
 
 ---
 
-## Breaking Changes Detected
+## 🔍 Breaking Changes
 
-> **Note**: Flag critical changes that may break downstream processes
+> **Note**: Only show this section if there are removed models
 
-### Removed Models
-- 🔴 `model.removed1` - Had X downstream dependencies
-  - Affected models: [list downstream models that referenced this]
-  - **Action Required**: Update or remove dependent models
-
-### Schema Modifications (if detectable from lineage)
-- ⚠ `model.modified1` - Schema file also changed
-  - Review for column additions/removals
-  - May affect downstream SELECT statements
+- 🔴 **`model.removed_name`** has been removed
+  - This is a potential breaking change for downstream dependencies
+  - **Action**: Verify no downstream models/dashboards depend on this
 
 ---
 
-## Preset Check Coverage
+## ✅ Preset Check Coverage
 
-**From recce.yml analysis:**
+> **Note**: Cross-reference changed models with recce.yml
 
-### Checks Covering Changed Models
-- ✅ **row_count_diff**: Covers `customers`, `orders` (2 of X modified models)
-- ✅ **query_diff**: Covers weekly aggregation in `customers`
-- ⚠ **value_diff**: Only covers `customers`, but `orders` also modified
+**Models Covered by Preset Checks**:
+- `customers` → row_count_diff, value_diff, query_diff
+- `orders` → row_count_diff
 
-### Gaps in Coverage
-- ❌ `model.uncovered1` - Modified but NO preset checks defined
-- ❌ `model.uncovered2` - New model with no validation
-- ⚠ `model.high_impact` - High downstream impact but only basic row count check
+**Models NOT Covered**:
+- `model.uncovered1` - No preset checks defined
+- `model.uncovered2` - New model with no validation
 
 ---
 
-## Suggested Validation Checks
+## 🎯 Recommended Next Steps
 
-> **Note**: These are SUGGESTED checks based on lineage analysis. Actual execution requires MS3.
+### Option 1: Run Data Validation (Recommended)
+Run `/ms3` to execute actual data validation:
+- ✅ Quantified row count changes
+- ✅ Value shift detection
+- ✅ Data quality metrics
+- ✅ Profile comparisons
 
-### Priority 1: Critical Validations
-1. **Row Count Diff** for high-impact models:
-   - `model.high_impact1` (X downstream dependencies)
-   - `model.high_impact2` (Y downstream dependencies)
-   - **Rationale**: Verify data volume stability for models with wide impact
-
-2. **Profile Diff** for key metrics:
-   - `customers.customer_lifetime_value` (core business metric)
-   - `orders.total_amount` (aggregated values)
-   - **Rationale**: Detect value shifts in critical business logic
-
-### Priority 2: Recommended Validations
-1. **Query Diff** for aggregation models:
-   - Aggregated metrics in `model.agg1`
-   - **Rationale**: Complex transformations need result validation
-
-2. **Value Diff** for models with primary keys:
-   - `model.with_pk1` on primary key `id`
-   - **Rationale**: Ensure record-level integrity
-
-### Priority 3: Optional Validations
-- Row counts for lower-impact staging models
-- Profile checks for dimensional attributes
+### Option 2: Interactive Review
+Launch Recce for manual exploration:
+- [Launch Recce Instance](https://cloud.datarecce.io/launch?pr=[PR_NUMBER])
 
 ---
 
-## Recommended Action Plan
+## 📝 Summary
 
-### ✅ Covered by Preset Checks
-The following validations are already defined in recce.yml:
-- [list checks that cover changed models]
-- **Next Step**: Run `/ms3` to execute these checks with data
-
-### ⚠ Requires Additional Validation
-The following models need attention:
-- [list models not covered by preset checks]
-- **Next Step**: Consider adding checks to recce.yml or run ad-hoc validation
-
-### 🔴 Breaking Changes - Immediate Action
-- [list any removed models or critical schema changes]
-- **Action**: Review and update dependent models/dashboards
+- **Modified Models**: [count]
+- **New Models**: [count]
+- **Removed Models**: [count] ← Breaking changes if > 0
+- **Preset Check Coverage**: [X of Y models covered]
 
 ---
 
-## Limitations of MS2 Analysis
+## ⚠ Limitations
 
-At this milestone, the analysis is limited to:
-- ✅ Identifying lineage changes and downstream impact
-- ✅ Detecting breaking changes (removed models)
-- ✅ Suggesting validation checks based on impact
-- ❌ Cannot execute data validation (no row counts, no value comparisons)
-- ❌ Cannot quantify data changes (no "±15% rows" metrics)
-- ❌ Cannot show actual data quality issues
+**What MS2 Provides:**
+- ✅ List of changed models
+- ✅ Breaking change detection
 
-**All suggested checks are RECOMMENDATIONS based on lineage. No actual data has been validated yet.**
+**What MS2 Does NOT Provide:**
+- ❌ No row counts
+- ❌ No data metrics
+- ❌ No quantified impact
 
----
-
-## Next Steps
-
-### To Execute Validations
-
-**Run MS3 Analysis** (`@claude /ms3`):
-- Requires: MS2 + data warehouse connection
-- Executes: Row count diffs, profile diffs, query diffs
-- Provides: Quantified metrics, actual data changes, anomaly detection
-
-### Interactive Validation
-
-**Launch Recce** for interactive exploration:
-- [Launch Full Recce Instance](https://cloud.datarecce.io/launch?pr=[PR_NUMBER])
-- [Launch Row Count Check](https://cloud.datarecce.io/launch?pr=[PR_NUMBER]&check=row_count)
-- [Launch Lineage View](https://cloud.datarecce.io/launch?pr=[PR_NUMBER]&view=lineage)
-
----
-
-## Summary Statistics
-
-- **Models Modified**: X
-- **Models Added**: Y
-- **Models Removed**: Z
-- **Total Downstream Impact**: N models affected
-- **Preset Checks Applicable**: M checks
-- **Suggested Additional Checks**: K checks
-- **Breaking Changes**: [0 or count]
+**For quantified data validation, run `/ms3`**
 
