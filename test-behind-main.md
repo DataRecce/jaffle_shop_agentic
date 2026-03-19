@@ -1,0 +1,1 @@
+Temporary file for BQ test recording
